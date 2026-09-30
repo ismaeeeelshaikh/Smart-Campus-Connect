@@ -1,11 +1,17 @@
+import logging
+
+# Configure logging once for the whole app (modules only call logging.getLogger).
+# Must run before the routers are imported, because importing them starts the RAG service.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
-from .routers import auth, chat, chat_sessions, password_reset
+from .routers import auth, chat_sessions, password_reset
 
 app = FastAPI(
-    title="College AI Chatbot",
-    description="AI-powered chatbot for college information with chat sessions",
+    title="Smart Campus Connect API",
+    description="AI-powered chatbot for APSIT college information",
     version="1.0.0"
 )
 
@@ -17,15 +23,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
 app.include_router(auth.router)
-app.include_router(chat.router)
 app.include_router(chat_sessions.router)
-app.include_router(password_reset.router) 
+app.include_router(password_reset.router)
 
 @app.get("/")
 async def root():
-    return {"message": "College AI Chatbot API with Chat Sessions"}
+    return {"message": "Smart Campus Connect API"}
 
 @app.get("/health")
 async def health_check():

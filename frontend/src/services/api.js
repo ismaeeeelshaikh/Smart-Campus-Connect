@@ -20,7 +20,10 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    // A 401 on a logged-in request means the session expired. A 401 from /auth/*
+    // (e.g. wrong password on login) must NOT reload the page, or the error message is lost.
+    const isAuthRequest = error.config?.url?.startsWith('/auth/');
+    if (error.response?.status === 401 && !isAuthRequest) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/login';
@@ -30,7 +33,6 @@ api.interceptors.response.use(
 );
 
 export const authAPI = {
-  register: (userData) => api.post('/auth/register', userData),
   login: (userData) => api.post('/auth/login', userData),
 };
 
@@ -47,12 +49,6 @@ export const chatSessionAPI = {
   
   // NEW: ChatGPT-like experience - start chat with first message
   startChatSession: (question) => api.post('/chat-sessions/start', { question }),
-};
-
-export const chatAPI = {
-  sendMessage: (message) => api.post('/chat', { question: message }),
-  getHistory: () => api.get('/chat/history'),
-  clearChat: () => api.delete('/chat/clear'),
 };
 
 export default api;

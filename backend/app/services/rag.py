@@ -20,7 +20,6 @@ from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 
 from ..config import settings
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class RAGService:

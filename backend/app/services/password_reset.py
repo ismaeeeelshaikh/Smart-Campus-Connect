@@ -1,25 +1,19 @@
 import random
 from datetime import datetime, timedelta
-from passlib.context import CryptContext
+from fastapi import HTTPException, status
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import update
 
 from ..models.user import User
 from ..models.password_reset_token import PasswordResetToken
+from ..utils.security import get_password_hash
 from .email import send_reset_email  # re-exported for routers/password_reset.py
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+INVALID_OTP = HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired OTP")
 
 def generate_otp() -> str:
     return f"{random.randint(100000, 999999)}"
-
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
 
 async def create_password_reset_token(db: AsyncSession, user: User, otp: str):
     expiry = datetime.utcnow() + timedelta(minutes=15)
@@ -33,7 +27,8 @@ async def verify_password_reset_token(db: AsyncSession, email: str, otp: str):
     result = await db.execute(select(User).filter(User.email == email))
     user = result.scalars().first()
     if not user:
-        raise Exception("User not found")
+        # Same error as a wrong OTP, so this endpoint can't be used to find out which emails are registered
+        raise INVALID_OTP
 
     result_token = await db.execute(
         select(PasswordResetToken)
@@ -46,7 +41,7 @@ async def verify_password_reset_token(db: AsyncSession, email: str, otp: str):
     )
     token = result_token.scalars().first()
     if not token:
-        raise Exception("Invalid or expired OTP")
+        raise INVALID_OTP
 
     return user, token
 
@@ -56,6 +51,7 @@ async def mark_token_used(db: AsyncSession, token: PasswordResetToken):
     await db.commit()
 
 async def update_user_password(db: AsyncSession, user: User, new_password: str):
-    user.hashed_password = hash_password(new_password)
+    # Same hasher (argon2) as signup, from utils/security.py
+    user.hashed_password = get_password_hash(new_password)
     db.add(user)
     await db.commit()

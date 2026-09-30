@@ -42,16 +42,10 @@ export const AuthProvider = ({ children }) => {
   const login = async (userData) => {
     try {
       const response = await authAPI.login(userData);
-      const { access_token, token_type } = response.data;
-      
-      // Store token
+      const { access_token, user: userInfo } = response.data;
+
+      // The backend returns the real user record ({ id, username, email }) with the token
       localStorage.setItem('token', access_token);
-      
-      // Store user data - THIS IS THE KEY FIX
-      const userInfo = {
-        email: userData.email,
-        username: userData.username || userData.email.split('@')[0] // Fallback to email username
-      };
       localStorage.setItem('user', JSON.stringify(userInfo));
       
       setUser(userInfo);
@@ -63,22 +57,6 @@ export const AuthProvider = ({ children }) => {
       throw error;
     }
   };
-
-  const register = async (userData) => {
-  try {
-    console.log('AuthContext: Starting registration for', userData.email);
-    const response = await authAPI.register(userData);
-    console.log('AuthContext: Registration successful');
-    
-    // Don't automatically log in after registration
-    // Let them manually log in to avoid conflicts
-    return response;
-  } catch (error) {
-    console.error('AuthContext: Registration failed:', error);
-    throw error;
-  }
-};
-
 
   const logout = () => {
     localStorage.removeItem('token');
@@ -92,7 +70,6 @@ export const AuthProvider = ({ children }) => {
     user,
     loading,
     login,
-    register,
     logout,
   };
 

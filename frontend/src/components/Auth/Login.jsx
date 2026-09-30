@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 
 const Login = () => {
   const [formData, setFormData] = useState({
@@ -12,6 +12,8 @@ const Login = () => {
 
   const { login } = useAuth();
   const navigate = useNavigate();
+  // e.g. "Account created! Please sign in." after signup
+  const successMessage = useLocation().state?.message;
 
   const handleChange = (e) => {
     setFormData({
@@ -26,15 +28,7 @@ const Login = () => {
     setError('');
 
     try {
-      const response = await login(formData);
-      if (response.data.user) {
-        const userInfo = {
-          id: response.data.user.id,
-          username: response.data.user.username,
-          email: response.data.user.email
-        };
-        localStorage.setItem('user', JSON.stringify(userInfo));
-      }
+      await login(formData);
       navigate('/');
     } catch (err) {
       setError(err.response?.data?.detail || 'Login failed');
@@ -84,6 +78,9 @@ const Login = () => {
               className="w-full px-3 py-2 rounded-md bg-background-dark border border-gray-700 placeholder-gray-400 text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-primary-600 transition"
             />
           </div>
+          {successMessage && !error && (
+            <div className="text-green-300 bg-green-950 rounded-md p-2 text-center text-sm">{successMessage}</div>
+          )}
           {error && (
             <div className="text-red-600 bg-red-900 rounded-md p-2 text-center text-sm">{error}</div>
           )}

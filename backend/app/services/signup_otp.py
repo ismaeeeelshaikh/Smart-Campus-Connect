@@ -22,6 +22,10 @@ async def generate_and_store_otp(email: str, db: AsyncSession) -> str:
 
     return otp
 
+async def delete_otps(email: str, db: AsyncSession):
+    await db.execute(delete(SignupOtpToken).where(SignupOtpToken.email == email))
+    await db.commit()
+
 async def verify_otp(email: str, otp: str, db: AsyncSession) -> bool:
     result = await db.execute(
         select(SignupOtpToken).where(

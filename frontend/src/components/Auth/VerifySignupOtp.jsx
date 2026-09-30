@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useLocation, useNavigate, Link } from 'react-router-dom';
+import { useLocation, useNavigate, Link, Navigate } from 'react-router-dom';
 
 const VerifySignupOtp = () => {
   const location = useLocation();
@@ -14,8 +14,7 @@ const VerifySignupOtp = () => {
 
   if (!username || !email || !password) {
     // If no user info, redirect back to register
-    navigate('/register');
-    return null;
+    return <Navigate to="/register" replace />;
   }
 
   const handleVerify = async () => {
@@ -28,19 +27,19 @@ const VerifySignupOtp = () => {
     setError('');
 
     try {
-      const response = await fetch('/apiauth/complete-signup', {
+      const response = await fetch('/api/auth/complete-signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, email, password, otp }),
+        body: JSON.stringify({ username, email, password, otp: otp.trim() }),
       });
 
       if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(errText || 'OTP verification failed');
+        const data = await response.json().catch(() => ({}));
+        throw new Error(typeof data.detail === 'string' ? data.detail : 'OTP verification failed');
       }
 
-      // On success redirect to login page or dashboard
-      navigate('/login');
+      // On success go to login, which shows a confirmation message
+      navigate('/login', { state: { message: 'Account created! Please sign in.' } });
     } catch (err) {
       setError(err.message || 'Failed to verify OTP. Please try again.');
     } finally {

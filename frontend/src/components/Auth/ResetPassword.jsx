@@ -19,7 +19,13 @@ export default function ResetPassword() {
       await resetPassword(email, otp, newPassword);
       setMessage("Password updated successfully. Please login.");
     } catch (err) {
-      setError("Invalid OTP or error resetting password.");
+      const detail = err.response?.data?.detail;
+      // 422 validation errors come back as a list; show the first message
+      setError(
+        (typeof detail === "string" && detail) ||
+        (Array.isArray(detail) && detail[0]?.msg) ||
+        "Invalid OTP or error resetting password."
+      );
     }
   };
 

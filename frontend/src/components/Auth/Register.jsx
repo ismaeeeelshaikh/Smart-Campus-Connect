@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useAuth } from '../../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 
 const Register = () => {
@@ -13,7 +12,6 @@ const Register = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
 
-  const { register } = useAuth();
   const navigate = useNavigate();
 
   const handleChange = (e) => {
@@ -72,7 +70,11 @@ const Register = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: formData.email.trim().toLowerCase() }),
       });
-      if (!res.ok) throw new Error('Failed to send OTP');
+      if (!res.ok) {
+        // Show the backend's reason, e.g. "Please sign up with your college email (@apsit.edu.in)."
+        const data = await res.json().catch(() => ({}));
+        throw new Error(typeof data.detail === 'string' ? data.detail : '');
+      }
 
       navigate('/verify-signup-otp', { state: {
         username: formData.username,
@@ -80,8 +82,7 @@ const Register = () => {
         password: formData.password
       }});
     } catch (err) {
-      alert('Could not send OTP. Please try again or use another email.');
-      setError('Could not send OTP. Please try again or use another email.');
+      setError(err.message || 'Could not send OTP. Please try again or use another email.');
     } finally {
       setLoading(false);
     }
@@ -138,10 +139,11 @@ const Register = () => {
                 required
                 disabled={loading}
                 className="w-full px-3 py-2 rounded-md bg-background-dark border border-gray-700 placeholder-gray-400 text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-primary-600 transition disabled:bg-gray-800"
-                placeholder="Email address"
+                placeholder="yourid@apsit.edu.in"
                 value={formData.email}
                 onChange={handleChange}
               />
+              <p className="mt-1 text-xs text-gray-500">Use your APSIT college email (@apsit.edu.in).</p>
             </div>
             <div>
               <label htmlFor="password" className="block mb-1 text-gray-400 font-medium">

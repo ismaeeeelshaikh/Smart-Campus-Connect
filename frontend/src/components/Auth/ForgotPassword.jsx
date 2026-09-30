@@ -17,7 +17,7 @@ export default function ForgotPassword() {
       setMessage("If your email exists, you will receive an OTP.");
       navigate("/reset-password", { state: { email } });
     } catch (err) {
-      setError("Error sending OTP. Try again later.");
+      setError(err.response?.data?.detail || "Error sending OTP. Try again later.");
     }
   };
 

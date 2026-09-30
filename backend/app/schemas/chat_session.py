@@ -1,9 +1,12 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import List, Optional
 
 class ChatMessageCreate(BaseModel):
     question: str
+
+class ChatSessionTitleUpdate(BaseModel):
+    title: str = Field(min_length=1, max_length=100)
 
 class ChatMessageResponse(BaseModel):
     id: int

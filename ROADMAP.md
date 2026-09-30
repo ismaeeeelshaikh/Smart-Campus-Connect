@@ -9,7 +9,7 @@ Tick each box as it's done.
 | 0 | Stop the credential leak | Urgent. Anyone on GitHub can use the leaked password right now |
 | 1 | Clean repo + reproducible setup | Every later change needs a project that installs and runs from scratch |
 | 2 | Fix broken features | Signup and some endpoints are broken today |
-| 3 | Fix the RAG core | Needed before adding live data, or the crawler has nowhere good to put it |
+| 3 | Fix the RAG core + guest mode | Needed before adding live data, or the crawler has nowhere good to put it. Guest mode needs the new history handling. |
 | 4 | Live website sync | **Sir's requirement:** changes on apsit.edu.in show up in the chatbot |
 | 5 | Security hardening | Before real students use it |
 | 6 | Frontend polish | Show sources, streaming, remove dead code |
@@ -27,7 +27,7 @@ A Gmail app password was hardcoded in `email.py` and `password_reset.py` and pus
 - [x] **0.3** Removed the stray root-level `env` file.
 - [x] **0.4** The DB URL now comes from `.env` everywhere: `alembic/env.py` sets it from `settings`, and `test_db_connection.py` / `test_groq.py` read `settings`.
 - [x] **0.5** Expanded `.gitignore` (secrets, `*.pkl`, Chroma folders, `temp_uploads/` with personal data, venv, node_modules, dist). Added `backend/.env.example`.
-- [ ] **0.6** Put the new sending email's address and app password in `backend/.env` (`MAIL_USERNAME`, `MAIL_FROM`, `MAIL_PASSWORD`). *(You)*
+- [x] **0.6** Put the new sending email's address and app password in `backend/.env` (`MAIL_USERNAME`, `MAIL_FROM`, `MAIL_PASSWORD`).
 - [x] **0.7** Pushed to the new repo `Smart-Campus-Connect` with a fresh git history.
 
 **Checked:** a simulated fresh `git add .` stages 86 files, and none of them contains a password, API key or personal phone number.
@@ -82,17 +82,27 @@ Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a6
 
 ## Phase 2: Fix broken features
 
-- [ ] **2.1 Signup is broken:** `frontend/src/components/Auth/VerifySignupOtp.jsx:31` calls `/apiauth/complete-signup`. Change it to `/api/auth/complete-signup`.
-- [ ] **2.2** Delete the OTP after a successful signup; right now it can be reused until it expires.
-- [ ] **2.3** Remove `POST /auth/register`. It creates users **without** OTP verification. Remove the matching `authAPI.register` in the frontend and the duplicate `register` logic in `useAuth.js` / `AuthContext.jsx`.
-- [ ] **2.4** Remove the old single-chat feature, which is always broken: `routers/chat.py`, `services/chat.py`, `schemas/chat.py`, the `Chat` model and `User.chats`. `ChatService.create_chat` calls `rag_service.get_response()`, which doesn't exist. Also remove frontend `useChat.js` and `chatAPI` (including `DELETE /chat/clear`, which never existed). Add a migration that drops the `chats` table.
-- [ ] **2.5** Move the duplicated `get_current_user` into `app/dependencies.py` and use it in every router.
-- [ ] **2.6** `PUT /chat-sessions/{id}/title` accepts a raw `dict`. Use a Pydantic schema (`title: str`, 1–100 characters).
-- [ ] **2.7** Use one password hasher everywhere: `password_reset.py` makes its own bcrypt-only `CryptContext`; use `utils/security.get_password_hash` instead.
-- [ ] **2.8** Stop sending internal errors to users (`detail=str(e)` in every router). Log the full error on the server and return a generic message.
-- [ ] **2.9** Password reset: the service raises a bare `Exception` for "user not found" or "invalid OTP", which becomes a 500. Return a 400 with a clear message instead.
+- [x] **2.1** Signup works: `VerifySignupOtp.jsx` now calls `/api/auth/complete-signup` (it was `/apiauth/...`). Errors show the backend's message instead of raw JSON.
+- [x] **2.2** The OTP is deleted after a successful signup, so it can't be reused.
+- [x] **2.3** Removed `POST /auth/register` (the no-OTP bypass), `authAPI.register`, the unused `register` in `AuthContext.jsx`, and the unused `hooks/useAuth.js`.
+- [x] **2.4** Removed the old single-chat feature: backend router/service/schema/model, `User.chats`, frontend `useChat.js` + `chatAPI`, and the dead `Layout.jsx` + `Sidebar.jsx` that used them. Migration `4e0b41ddf85c` drops the `chats` table.
+- [x] **2.5** One `get_current_user` in `app/dependencies.py`. It also returns 401 (not 404) if the token's account no longer exists.
+- [x] **2.6** Renaming a chat uses the `ChatSessionTitleUpdate` schema (1–100 characters, trimmed). A bad body now returns 422 instead of 500.
+- [x] **2.7** Password reset uses `utils/security.get_password_hash` (argon2), the same hasher as signup.
+- [x] **2.8** No internal errors reach users: routers log the full error and return a generic message. Logging is configured once in `main.py` at INFO level (`routers/auth.py` had forced DEBUG for the whole app).
+- [x] **2.9** Password reset returns 400 "Invalid or expired OTP" for a wrong OTP *and* for an unknown email, so it can't be used to discover accounts. Email-sending failures return a friendly 503 instead of a 500.
 
-**Done when:** signup (with OTP) → login → new chat → follow-up message → rename → delete → forgot password all work in the browser without errors.
+**Added during Phase 2:**
+- [x] **2.10 College-email signup:** only `@apsit.edu.in` addresses can sign up (`ALLOWED_SIGNUP_DOMAINS` in `.env`); `ADMIN_EMAIL` is always allowed. The signup form shows the rule and the backend's reason on rejection. An already-registered email gets "Please log in" at the OTP step instead of after it.
+- [x] **2.11 Wrong password no longer reloads the login page:** the axios interceptor treated every 401 as "session expired" and redirected, which wiped the error message. It now skips `/auth/*` requests.
+- [x] **2.12 Header shows the real username:** `AuthContext.login` stored the part of the email before `@`; it now stores the `user` object the backend returns.
+- [x] **2.13 Login shows "Account created! Please sign in."** after signup. Emails are lowercased everywhere, so login is case-insensitive.
+- [x] **2.14 Default model is `openai/gpt-oss-120b`,** because Groq removed the Llama model.
+
+**Verified on 2026-10-01:**
+- **API:** 28/28 end-to-end checks passed (real DB; email and LLM stubbed): signup rules, OTP reuse, login, chat create/follow-up/rename/delete, 404/401/422 cases, the full password reset, and argon2 hashing.
+- **Frontend:** `npm run build` passes.
+- **Still to do (you):** try it in the browser with a real OTP email.
 
 ---
 
@@ -111,9 +121,17 @@ Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a6
   - treat website text as data, not instructions
   - remove the "web search is the TRUTH" rule
 - [ ] **3.8** Remove the keyword HOD hack (`"it" in q_lower` also matches "institute" and "with") and the DuckDuckGo search. Phase 4 replaces both with real website data.
-- [ ] **3.9** Read the model name from `settings.groq_model` instead of the hardcoded `"llama-3.3-70b-versatile"`.
+- [x] **3.9** The model name comes from `settings.groq_model` (done in Phase 1; default `openai/gpt-oss-120b`).
+- [ ] **3.10 Guest mode for newcomers.** People without an `@apsit.edu.in` email (future students, parents) can't sign up, so they need a way to ask about APSIT without an account.
+  - **Backend:** a public `POST /guest/chat` endpoint with no login. It takes `{question, history}`, where `history` is the last few Q&A pairs kept by the browser. It uses the same RAG answer function as logged-in chats (after 3.3 that function receives history as a parameter) and saves nothing in the database.
+  - **Frontend:**
+    - a **"Chat as guest"** button on the login page and a public `/guest` route
+    - the same chat screen, keeping history in React state only (gone when the tab closes)
+    - a small banner: "Guest chat isn't saved. APSIT students can sign in with their college email to keep their chats."
+  - **No question limits** for guests. *(Decision 2026-10-01: Groq credits are handled separately.)*
+  - **Done when:** in a private browser window with no login, a guest can ask about admissions and fees and ask follow-ups, and nothing is written to `chat_sessions` / `chat_messages`.
 
-**Done when:** two browser windows can chat at the same time without waiting on each other, a backend restart takes seconds, and every answer ends with its source.
+**Done when:** two browser windows can chat at the same time without waiting on each other, a backend restart takes seconds, every answer ends with its source, and guests can chat without an account.
 
 ---
 
@@ -169,7 +187,7 @@ Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a6
 
 ## Phase 5: Security hardening
 
-- [ ] **5.1** Rate limiting with `slowapi`: login, OTP request, OTP verify, password reset and chat. For example, at most 5 OTP requests per email per hour.
+- [ ] **5.1** Rate limiting with `slowapi` on login, OTP request, OTP verify and password reset. For example, at most 5 OTP requests per email per hour, which also stops someone from spamming your sending Gmail. Chat (logged-in and guest) is **not** limited, by decision on 2026-10-01.
 - [ ] **5.2 OTPs:**
   - generate with `secrets` instead of `random`
   - store a **hash** of the OTP, not the plain code
@@ -227,3 +245,5 @@ Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a6
 | 2026-09-30 | Phase 0 (code side) | Secrets moved to `.env`, `.gitignore` fixed, `.env.example` added |
 | 2026-09-30 | Pushed to new repo | `Smart-Campus-Connect`, fresh history |
 | 2026-10-01 | Phase 1 | Clean setup: requirements, config, migrations, README; tested end-to-end |
+| 2026-10-01 | Phase 2 | Broken features fixed, college-email-only signup; 28/28 API checks pass |
+| 2026-10-01 | Plan change | Added 3.10 guest mode for newcomers, with no chat limits (Groq credits handled separately) |
