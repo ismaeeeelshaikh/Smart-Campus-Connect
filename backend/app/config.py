@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     admin_email: str = ""
+    # Comma-separated list of frontend URLs allowed to call the API
+    cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
     MAIL_USERNAME: str
     MAIL_PASSWORD: str

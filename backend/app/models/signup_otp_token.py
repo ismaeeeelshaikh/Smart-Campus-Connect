@@ -1,8 +1,6 @@
 from sqlalchemy import Column, Integer, String, DateTime, func
-from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime, timedelta
-
-Base = declarative_base()
+from ..database import Base
 
 class SignupOtpToken(Base):
     __tablename__ = "signup_otp_tokens"

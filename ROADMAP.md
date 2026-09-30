@@ -28,7 +28,7 @@ A Gmail app password was hardcoded in `email.py` and `password_reset.py` and pus
 - [x] **0.4** The DB URL now comes from `.env` everywhere: `alembic/env.py` sets it from `settings`, and `test_db_connection.py` / `test_groq.py` read `settings`.
 - [x] **0.5** Expanded `.gitignore` (secrets, `*.pkl`, Chroma folders, `temp_uploads/` with personal data, venv, node_modules, dist). Added `backend/.env.example`.
 - [ ] **0.6** Put the new sending email's address and app password in `backend/.env` (`MAIL_USERNAME`, `MAIL_FROM`, `MAIL_PASSWORD`). *(You)*
-- [ ] **0.7** Push to the new repo `Smart-Campus-Connect` with a **fresh git history** (the old `.git` still contains the leaked password). *(You)*
+- [x] **0.7** Pushed to the new repo `Smart-Campus-Connect` with a fresh git history.
 
 **Checked:** a simulated fresh `git add .` stages 86 files, and none of them contains a password, API key or personal phone number.
 
@@ -40,14 +40,14 @@ Right now a fresh clone **cannot** be set up: the migrations are broken and `req
 
 ### 1A. Remove junk from git
 - [x] **1.1** `backend/temp_uploads/` (44 MB of PDFs), `backend/*.pkl`, `backend/chroma_db_final/` and `backend/memory_vectorstore/` are git-ignored, so the fresh history won't include them.
-- [ ] **1.2** Delete dead code: `backend/app/utils/advanced_rag_utils.py` (260 lines, all commented out) and `frontend/src/components/Sidebar/ChatHistory.jsx` (empty).
-- [ ] **1.3** Move `test_db_connection.py` and `test_groq.py` into a `backend/scripts/` folder (or delete them once real tests exist in Phase 7).
+- [x] **1.2** Deleted dead code: `backend/app/utils/advanced_rag_utils.py` (260 lines, all commented out) and `frontend/src/components/Sidebar/ChatHistory.jsx` (empty).
+- [x] **1.3** Moved the check scripts to `backend/scripts/check_db.py` and `check_groq.py` (run with `python -m scripts.check_db`). Named `check_*`, not `test_*`, so pytest won't collect them in Phase 7. Replaced their emojis, which crash on the Windows console.
 
 ### 1B. Dependencies and config
-- [ ] **1.4** Re-save `requirements.txt` as UTF-8 and trim it to what's actually imported. `spacy`, `faiss-cpu`, `kubernetes` and `duckduckgo_search` are unused or about to be removed. Pin the Python version (3.11) in the README.
-- [ ] **1.5** Make `config.py` the **single source of config**: add `groq_model`, `admin_email`, `cors_origins`, `chroma_dir`, `embedding_model`, `crawl_interval_hours`. Remove every `os.getenv` / `load_dotenv` from services. Resolve `env_file` relative to the backend folder so it works from any directory.
+- [x] **1.4** `requirements.txt` is now UTF-8 with 23 direct dependencies instead of 170 pinned packages; pip resolves the rest. Python **3.12** (3.13+ isn't supported by all ML packages yet). `pip check` passes.
+- [x] **1.5** `config.py` is the single source of config: added `groq_model` and `cors_origins`, and `rag.py` / `main.py` read from `settings` (no more `os.getenv` / `load_dotenv`). `.env` is found from any working directory. *(`chroma_dir`, `embedding_model` and `crawl_interval_hours` will be added in Phases 3–4 when they're used.)*
 - [x] **1.6** Add `backend/.env.example` with every key and no values.
-- [ ] **1.7** Set `echo=False` in `database.py`; it currently logs every SQL query.
+- [x] **1.7** Removed `echo=True` from `database.py`.
 
 ### 1C. Fix the database migrations
 Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a66732 → 975eed345791`:
@@ -57,15 +57,26 @@ Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a6
 - `signup_otp_token.py` defines its **own** `Base`, so Alembic never sees that table
 - nothing creates `chat_sessions`, `chat_messages`, `password_reset_tokens` or `signup_otp_tokens`
 
-- [ ] **1.8** Make `signup_otp_token.py` use `from ..database import Base`.
-- [ ] **1.9** Import every model in `app/models/__init__.py` and import that package in `alembic/env.py`.
-- [ ] **1.10** Delete the 4 broken migrations and generate **one clean initial migration**. Check that it creates all tables.
-- [ ] **1.11** For your existing local DB: back it up (`pg_dump`), then either recreate it with `alembic upgrade head`, or run `alembic stamp head` if the schema already matches.
+- [x] **1.8** `signup_otp_token.py` now uses the shared `Base`.
+- [x] **1.9** `app/models/__init__.py` imports every model, and `alembic/env.py` imports that package.
+- [x] **1.10** Replaced the 4 broken migrations with one clean migration, `89edb413fa81_initial_schema`: 6 tables, plus indexes on `chat_sessions.user_id`, `chat_messages.chat_session_id` and `chat_messages.user_id`. Verified: `alembic check` finds no difference between models and DB, and downgrade → upgrade works.
+- [x] **1.11** The old `college_ai` database no longer existed on this PostgreSQL 18 install, so a fresh one was created with `alembic upgrade head`. There was no data to migrate.
 
 ### 1D. Docs
-- [ ] **1.12** Rewrite `README.md` with the exact setup: create the Postgres DB → venv → `pip install -r requirements.txt` → copy `.env.example` → `alembic upgrade head` → build the index → run the backend → run the frontend. Remove the wrong `del vectorstore.pkl` instruction.
+- [x] **1.12** Rewrote `README.md` with the exact Windows setup steps, requirements, migrations workflow and project structure.
 
-**Done when:** a fresh clone in a new folder runs end-to-end by following only the README.
+**Verified on 2026-10-01:**
+- **Backend:** the backend starts, and `/health` responds.
+- **Full API flow:** register → login → start chat → follow-up → list → delete all work. A chat answer takes about 11 s.
+- **Frontend:** `npm install` + `npm run build` succeed.
+- **Not tested yet:** the OTP email, because `.env` still has the old mail account.
+
+**Found during testing (fixed in later phases):**
+- Backend startup takes several minutes, because the whole knowledge base is re-embedded on every start → 3.4
+- The follow-up "What is her qualification?" (about the Civil HOD) got "not available"; the live site says PhD → Phase 4
+- `logging.basicConfig(level=logging.DEBUG)` in `routers/auth.py` makes the whole app log at DEBUG level → 2.8
+- Chroma sends anonymous telemetry to posthog.com by default; turn it off with `anonymized_telemetry=False` → 3.4
+- The old `POST /chat` returns 500 as expected → 2.4
 
 ---
 
@@ -214,3 +225,5 @@ Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a6
 |---|---|---|
 | 2026-09-30 | Roadmap written | Analysis + live site tests done |
 | 2026-09-30 | Phase 0 (code side) | Secrets moved to `.env`, `.gitignore` fixed, `.env.example` added |
+| 2026-09-30 | Pushed to new repo | `Smart-Campus-Connect`, fresh history |
+| 2026-10-01 | Phase 1 | Clean setup: requirements, config, migrations, README; tested end-to-end |

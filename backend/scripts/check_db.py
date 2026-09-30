@@ -8,11 +8,11 @@ async def test_connection():
     try:
         conn = await asyncpg.connect(url)
         result = await conn.fetch("SELECT version()")
-        print("✅ Connection successful!")
+        print("OK: Connection successful!")
         print(f"PostgreSQL version: {result[0][0]}")
         await conn.close()
     except Exception as e:
-        print(f"❌ Connection failed: {e}")
+        print(f"FAILED: Connection failed: {e}")
 
 if __name__ == "__main__":
     asyncio.run(test_connection())

@@ -9,9 +9,9 @@ def test_groq():
             temperature=0.1
         )
         response = llm.invoke("Hello, how are you?")
-        print(f"✅ GROQ API working with {settings.groq_model}! Response: {response.content}")
+        print(f"OK: GROQ API working with {settings.groq_model}! Response: {response.content}")
     except Exception as e:
-        print(f"❌ GROQ API error: {e}")
+        print(f"FAILED: GROQ API error: {e}")
 
 if __name__ == "__main__":
     test_groq()

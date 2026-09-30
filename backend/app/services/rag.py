@@ -18,8 +18,7 @@ from langchain.retrievers import ParentDocumentRetriever
 from langchain_community.tools import DuckDuckGoSearchRun
 from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 
-from dotenv import load_dotenv
-load_dotenv()
+from ..config import settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -32,8 +31,8 @@ class RAGService:
 
         # Temperature 0.3: Keep it low to prevent hallucinating names
         self.llm = ChatGroq(
-            groq_api_key=os.getenv("GROQ_API_KEY"),
-            model_name="llama-3.3-70b-versatile",
+            groq_api_key=settings.groq_api_key,
+            model_name=settings.groq_model,
             temperature=0.3,
         )
 
