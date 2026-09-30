@@ -1,0 +1,29 @@
+# Secrets: never commit these (copy backend/.env.example to backend/.env instead)
+.env
+env
+*.env
+!.env.example
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Generated at runtime by the backend (rebuilt automatically, may contain users' chats)
+backend/*.pkl
+backend/chroma_db*/
+backend/memory_vectorstore/
+
+# Uploaded files (contain personal data)
+backend/temp_uploads/
+
+# Node / frontend build
+node_modules/
+frontend/dist/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

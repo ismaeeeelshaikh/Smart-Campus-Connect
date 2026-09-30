@@ -1,0 +1,125 @@
+﻿APSIT ADMISSIONS AND GENERAL INFORMATION 2025-26
+
+=== BASIC INFORMATION ===
+
+Institute Name: A.P. Shah Institute of Technology (APSIT)
+DTE Code: 3475
+Management: Parshvanath Charitable Trust (PCT)
+Institute Type: Religious Jain Minority Institute
+Location: Survey No. 12, 13, Opp. Hypercity Mall, Kasarvadavali, Ghodbunder Road, Thane (W), 400610
+Contact: Tel.: 7738305400 / 022-25973737/38
+Website: www.apsit.edu.in
+Email: admission@apsit.edu.in, exam@apsit.edu.in, reception@apsit.edu.in
+
+Vision: To be a premier institute that produces globally competent engineering professionals to contribute to the socio-economic growth of India.
+Mission: To provide a collaborative and conducive environment to meet current and future engineering challenges through project-based and value-added education with the help of trained faculty.
+
+=== COURSES AND SEAT INTAKE ===
+
+APSIT offers 4-year Bachelor of Engineering (B.E./B.Tech) programs with a total intake of 780 seats. The medium of instruction is English. The available branches and their seat intake are:
+- Civil Engineering: 30 seats (NBA Accredited)
+- Computer Engineering: 180 seats (NBA Accredited)
+- CSE (Artificial Intelligence and Machine Learning): 180 seats
+- CSE (Data Science): 120 seats
+- Information Technology: 180 seats (NBA Accredited)
+- Mechanical Engineering: 30 seats (NBA Accredited)
+
+=== ADMISSION PROCESS AND TIMELINE ===
+
+APSIT has two admission channels: 90% of seats are filled through the Centralized Admission Process (CAP) conducted by the Government of Maharashtra, and the remaining 10% are through Institute-level admissions. The admission process generally starts after the MHT-CET exam results are declared and continues until the final date announced by the CET CELL.
+
+=== ELIGIBILITY CRITERIA ===
+
+First Year Engineering (Direct Admission):
+Candidates must be Indian Nationals who have passed HSC (or equivalent) with Physics and Mathematics as compulsory subjects, along with one subject from Chemistry, Biotechnology, Biology, or Technical/Vocational fields. A minimum of 45% marks is required in these subjects combined (40% for Backward Class/PwD candidates from Maharashtra). A valid score in MHT-CET or JEE Main of the current year is mandatory.
+
+Direct Second Year (Lateral Entry):
+Candidates must be Indian Nationals with either a Diploma in Engineering with at least 45% marks (40% for reserved categories) or a B.Sc. degree with at least 45% marks (40% for reserved categories) and have passed HSC with Mathematics.
+
+Out-of-State Students:
+Students from outside Maharashtra can apply based on their MHT-CET 2025 or JEE Main score of the current year. They must have passed their 12th standard exam in English with a minimum of 45% marks in PCM. Registration on the Maharashtra CET Cell portal is mandatory for all out-of-state students.
+
+=== REQUIRED DOCUMENTS FOR ADMISSION ===
+
+Documents for all candidates at the time of application:
+- SSC Marksheet
+- HSC Marksheet
+- MHT-CET/JEE Score Card
+- Leaving Certificate
+- Domicile or Birth Certificate
+- Aadhar Card
+- Migration Certificate
+- SC/FC Registration (if applicable)
+
+Additional documents for specific categories:
+- SC/ST: Caste Certificate and Caste Validity Certificate.
+- OBC: Caste Certificate, Caste Validity Certificate, and a valid Non-Creamy Layer Certificate.
+- Jain Minority: Religious Minority Letter from a Jain Derasar and a Notarized Affidavit.
+- TFWS/EBC: Income Certificate.
+All original documents must be submitted at the time of admission.
+
+=== FEE STRUCTURE FOR 2025-26 ===
+
+The general admission fee for the academic year 2025-26 is Rs. 138,999, which includes the Fee Regulating Authority (FRA) approved fee of Rs. 136,000 plus university fees. The fee paid during the first year will remain the same for the entire 4-year duration of the course. All payments must be made online via UPI, Card, Net Banking, or a Demand Draft (DD) in favor of "A P SHAH INSTITUTE OF TECHNOLOGY". No cash payments are accepted.
+
+Fee for Open/Minority Students:
+- Maharashtra Board: Rs. 136,406 per year.
+- Other Boards: Rs. 136,706 per year.
+
+Fee for Direct Second Year (DSE) Students:
+- Open/Minority: Rs. 136,706 per year.
+- SC/ST: Rs. 706 per year.
+- OBC Male: Rs. 77,318 per year.
+- OBC Female: Rs. 17,929 per year.
+
+Fee with Government Scholarship/Benefits (for CAP students):
+- SC/ST Candidates (from Maharashtra): Rs. 406 per year.
+- SC/ST Candidates (from Other Boards): Rs. 706 per year.
+- OBC Female, TFWS, NT/DT/SBC Categories: Rs. 17,629 per year.
+- OBC Male: 50% waiver on tuition fees.
+
+=== JAIN MINORITY ADMISSION CRITERIA ===
+
+To qualify under the Jain Minority quota, a candidate must be domiciled in Maharashtra and belong to the Jain Religious Minority Community. This status must be mentioned on their School Leaving Certificate.
+
+=== APPLICATION PROCESS ===
+
+Institute Level Quota:
+1. Register online on the institute website (www.apsit.edu.in).
+2. Mandatory registration on the Maharashtra CET Cell portal is also required.
+3. Collect the hardcopy application form from the college campus.
+4. Submit the filled form with document photocopies in person before the deadline.
+5. The institute will publish a merit list on its website.
+6. Selected students must attend the admission round in person with all original documents and the required fees.
+
+Centralized Admission Process (CAP):
+1. Register on the Maharashtra CET Cell portal.
+2. Fill the option form, selecting APSIT courses as preferences.
+3. Participate in the CAP rounds for seat allotment.
+4. If a seat is allotted, report to the college for admission confirmation.
+
+=== IMPORTANT POLICIES AND SCHOLARSHIPS ===
+
+APSIT does not accept any donations for admission; only the fees approved by the Fee Regulating Authority (FRA) are charged. Government of Maharashtra scholarships are available only for students admitted through the CAP rounds in categories like SC, ST, OBC, EBC, etc. Students admitted through the institute quota are not eligible for these government schemes. The fee refund policy is as per the norms of UGC and the Government of Maharashtra.
+
+=== PLACEMENT HIGHLIGHTS ===
+
+The Training and Placement Cell at APSIT provides aptitude and soft skill training to make students industry-ready. The median salary package is Rs. 4,28,000 per annum. Top salary packages include 25 LPA from StreamSets and 20 LPA from Goldman Sachs. Leading companies that recruit from APSIT include TCS, Infosys, Deloitte, Capgemini, LTIMindtree, Wipro, Accenture, and Tech Mahindra.
+
+=== FACILITIES AND STUDENT INITIATIVES ===
+
+Campus Facilities: APSIT provides a Wi-Fi enabled campus with air-conditioned classrooms, over 60 labs (including 33 computer labs), a library with over 22,600 books and e-books (Pearson & Tata McGraw-Hill), a seminar hall, canteen, and sports facilities.
+
+Industry Collaborations & Training: The institute has established several training centers in collaboration with industry leaders, including Cisco Networking Academy, Oracle Academy, Autodesk Training Center, Blue Prism, Virtusa, an NVIDIA AI/Deep Learning Lab, and an iOS Lab.
+
+Value Addition Programs: APSIT offers several free programs for student development, including GATE/GRE training, foreign language courses (Japanese, German, etc.), NPTEL courses from IITs, and project-based learning. The institute also has an e-learning platform (Moodle).
+
+Student Clubs: There are numerous technical clubs for students, such as the Coder's Club, AIML Club, Cyber Security Club, Google Developer Student Club (GDSC), Blockchain Club, and the Modified Auto Club.
+
+=== ACHIEVEMENTS AND RECOGNITION ===
+
+- Awarded "Best Engineering College" by ISTE in 2022.
+- Received "Academic Excellence Award" from the Institution of Engineers, India in 2023.
+- Ranked #1 in the Mumbai Region and #5 in India by the Times of India Engineering Survey 2022.
+- Recognized as a "Star Performing Engineering Institute" by AICTE for its Virtual Internship Program.
+- Acknowledged by the World Book of Records for facilitating over 5 lakh internships.

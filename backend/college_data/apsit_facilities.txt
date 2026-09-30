@@ -1,0 +1,57 @@
+APSIT FACILITIES AND STUDENT RESOURCES INFORMATION
+
+=== MEDICAL AND COUNSELLING FACILITIES ===
+
+First Aid:
+A First Aid Room is available on the first floor in Room No. 122B, with the key available at the reception. First Aid kits are also available on all floors, in administrative areas, and in various labs. These kits contain medicines for external wounds, and their expiry dates are regularly checked. No consumable medicines are given without a doctor's prescription.
+
+Medical Emergencies:
+The institute has a tie-up with Tieten Medicity, Kasarvadavali, for any medical emergencies. Wheelchairs are available for students and staff. Additionally, the institute provides an accidental insurance policy of up to 5 Lakhs for each student and one parent.
+
+Counselling Facility:
+A professional counselor has been appointed for students, faculty, and staff to provide psychological counselling and support for mental health awareness.
+
+=== LIBRARY SERVICES AND RESOURCES ===
+
+The library's goal is to meet the quest for knowledge of students and faculty through a wide range of offline and online resources. The library collection includes a vast number of titles, volumes, and periodicals.
+
+Reading Room:
+The reading room has a seating capacity of 250 members.
+
+Collections:
+- The reference section includes encyclopedias, dictionaries, handbooks, manuals, and other reference books.
+- A special collection on personality development is available, including books on TOFEL, aptitude tests, autobiographies, and general knowledge.
+
+E-Resources:
+The library has subscriptions to e-books from McGraw-Hill Education and Pearson Education. It is also an institutional registered member of the National Digital Library of India (NDL), sponsored by MHRD. All e-resources can be accessed from any computer on campus.
+
+Multimedia Room:
+A multimedia room with a seating capacity of 100 provides access to the internet, online journals, CDs, DVDs, and NPTEL video lectures. The room is equipped with headphones, a scanner, a CD-writer, and a printer.
+
+Library Management System:
+The library uses KOHA, an open-source library management system software, to manage its database of services. An online public access catalog (WEB OPAC) is also available.
+
+=== BENTLEY INSTITUTE ACADEMIC PROGRAM ===
+
+APSIT provides students with access to the Bentley Institute Academic Program, which includes a comprehensive portfolio of more than 50 professional software applications used in infrastructure industries worldwide. This gives students hands-on experience and a competitive edge in the job market. The subscription includes software for classrooms and personal computers, free online learning for educators, full software upgrades, and 24/7 technical support.
+
+Key Software Available:
+- **Structural Analysis and Design:** STAAD Pro, STAAD Foundation Advanced, RAM Structural System, RAM Elements, RAM Concepts, RAM Connection, ProStructures, and Microstran. These tools are used for designing and analyzing structures made of steel, concrete, timber, and aluminum, complying with over 90 international design codes.
+- **Modeling and Visualization:** MicroStation (for data-driven, BIM-ready 3D modeling) and MicroStation PowerDraft (for 2D CAD design and documentation).
+- **Reality Modeling:** ContextCapture (for creating 3D models from photographs), Bentley LumenRT (for creating cinematic quality renderings and animations), Bentley Descartes (for integrating point clouds and raster data), and Bentley Pointools (for editing and visualizing point clouds).
+- **Building Design and Energy Analysis:** Hevacomp Mechanical Designer, Hevacomp Electrical Designer, and Hevacomp Dynamic Simulation for designing and analyzing building systems to meet United Kingdom standards and perform energy analysis with EnergyPlus.
+- **Civil Design:** The OpenRoads suite (ConceptStation, Designer, Navigator) for comprehensive road network design and analysis from concept to construction. The OpenRail suite (ConceptStation, Designer) for track, station, yard, and overhead line electrification design. gINT Professional for managing and reporting subsurface data like borehole and well logs.
+- **Bridge Analysis:** LEAP Bridge Concrete (for concrete bridges), LEAP Bridge Steel (for steel I-girder and tub-girder bridges), and RM Bridge (for advanced design and construction simulation of complex bridge systems).
+- **Hydraulics and Hydrology:** WaterGEMS & WaterCAD (for water distribution network analysis), SewerGEMS & SewerCAD (for sanitary and combined sewer modeling), HAMMER (for water hammer and transient analysis), and CivilStorm (for stormwater systems).
+- **Offshore Structural Analysis:** MAXSURF (for initial hull design and optimization of vessels) and SACS (for analysis and design of offshore structures like jackets and topsides).
+- **Mine Design:** The MineCycle suite (Designer, Survey, Material Handling) for optimizing mine plans, processing survey data, and designing bulk material handling systems.
+- **Plant Design:** The OpenPlant suite (Modeler, PID, Isometrics Manager) for 3D plant design, creating intelligent Piping and Instrumentation Diagrams (P&IDs), and managing isometric drawing deliverables.
+- **GIS and Project Delivery:** Bentley Map Enterprise (for 2D/3D desktop GIS and mapping) and Bentley Navigator (for BIM model review, collaboration, and clash detection).
+
+=== AUTODESK HUB PROGRAMS ===
+
+APSIT provides access to various Autodesk software products, including:
+- **Inventor:** For professional-grade 3D mechanical design and product simulation.
+- **AutoCAD:** For 2D and 3D design and drafting, including specialized toolsets.
+- **Moldflow:** For optimizing plastic injection molding design.
+- **BIM 360:** For real-time cloud work-sharing, design collaboration, cost management, and constructability reviews in Building Information Modeling (BIM).

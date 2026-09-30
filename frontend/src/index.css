@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Dark background for whole body */
+@layer base {
+  body {
+    @apply bg-background-dark text-white;
+    background-color: #131827; /* dark navy */
+    color: #d1d5db; /* soft gray text */
+  }
+}
+
+/* Components styling with dark mode colors */
+@layer components {
+  .chat-message {
+    @apply p-4 rounded-lg mb-4 max-w-4xl mx-auto;
+    background-color: #23263b; /* card bg */
+    color: #e0e7ff; /* faded light for text */
+  }
+  
+  .user-message {
+    @apply bg-primary-500 text-white ml-auto;
+  }
+  
+  .ai-message {
+    @apply bg-background-card border border-gray-700 text-gray-200;
+    background-color: #23263b;
+    border-color: #3b82f6;
+  }
+  
+  .sidebar-item {
+    @apply p-3 rounded-lg cursor-pointer transition-colors duration-200;
+    color: #c7d2fe; /* light purple */
+  }
+  
+  .sidebar-item:hover {
+    @apply bg-accent-light text-white;
+    background-color: #c8b6ff;
+    color: white;
+  }
+  
+  .sidebar-item.active {
+    @apply bg-primary-600 border-l-4 border-primary-500 text-white;
+    background-color: #2563eb;
+    border-color: #a78bfa;
+  }
+
+  /* Scrollbar for sidebar (optional) */
+  .sidebar-container::-webkit-scrollbar {
+    width: 8px;
+  }
+  
+  .sidebar-container::-webkit-scrollbar-track {
+    background: #131827;
+  }
+  
+  .sidebar-container::-webkit-scrollbar-thumb {
+    background-color: #7c3aed;
+    border-radius: 10px;
+    border: 2px solid #131827;
+  }
+}
