@@ -1,5 +1,6 @@
 # Secrets: never commit these (copy backend/.env.example to backend/.env instead)
 .env
+.env.*
 env
 *.env
 !.env.example

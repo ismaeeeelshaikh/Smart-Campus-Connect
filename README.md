@@ -78,6 +78,24 @@ npm run dev
 
 Open http://localhost:5173. The dev server forwards `/api/*` requests to the backend on port 8000.
 
+- **Lint:** `npm run lint` (ESLint 9, flat config in `eslint.config.js`).
+- **Production build:** `npm run build` → `frontend/dist/`. If the API is on another address, set `VITE_API_URL` at build time (see `frontend/.env.example`).
+
+### Design
+
+The UI uses an "APSIT Heritage" design system taken from the college crest: deep teal (`#145C5F`), saffron gold (`#E0A91B`), crimson (`#A51D2D`, used sparingly) on warm paper (`#F7F4EC`). Headings are in Literata (serif), text in Hanken Grotesk. Both fonts are bundled with the app, so no Google Fonts request is made. The tokens are in `frontend/tailwind.config.js`; shared button, input and card styles are in `src/index.css`. The first concepts were drafted in Google Stitch (project "Smart Campus Connect (APSIT)").
+
+### Chat features
+
+- **Streaming:** answers appear word by word over server-sent events (`/chat-sessions/start/stream`, `/chat-sessions/{id}/messages/stream`, `/guest/chat/stream`).
+- **Sources:** each answer shows source chips that link the website pages it used. The backend keeps only pages that were really in the retrieved context, so a link the model invents is dropped. Sources are saved with each message.
+- **Formatting:** answers render as markdown, including tables (GitHub-flavoured markdown).
+- **Copy, retry and voice:**
+  - copy button on every answer
+  - "Try again" when a question fails
+  - voice input (Chrome/Edge, `en-IN`) that asks for the microphone only when you press the mic
+- **Mobile:** the sidebar becomes a drawer behind the menu button.
+
 ## Knowledge base
 
 The chatbot answers from the text files in `backend/college_data/`, indexed into a vector database stored in `backend/chroma_db/` (git-ignored).

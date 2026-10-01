@@ -8,6 +8,9 @@ export const USERNAME_RULE = 'Username must be 3-30 characters: letters, numbers
 
 // FastAPI validation errors (422) arrive as a list; show the first message without pydantic's prefix
 export const apiErrorMessage = (err, fallback) => {
+  if (err.request && !err.response) {
+    return "Can't reach the server. Please check your connection and try again.";
+  }
   const detail = err.response?.data?.detail;
   if (typeof detail === 'string') return detail;
   if (Array.isArray(detail) && detail[0]?.msg) return detail[0].msg.replace(/^Value error, /, '');

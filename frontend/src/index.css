@@ -2,62 +2,85 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Dark background for whole body */
 @layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
   body {
-    @apply bg-background-dark text-white;
-    background-color: #131827; /* dark navy */
-    color: #d1d5db; /* soft gray text */
+    @apply bg-paper font-sans text-ink antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-serif;
+  }
+
+  ::selection {
+    @apply bg-gold-200 text-ink;
+  }
+
+  /* Visible keyboard focus on buttons and links, in brand colours
+     (text inputs have their own focus style, see .field-input and the chat composer) */
+  a:focus-visible,
+  button:focus-visible,
+  [role='button']:focus-visible {
+    @apply outline-none ring-2 ring-gold-400 ring-offset-2 ring-offset-paper;
+  }
+  input:focus-visible,
+  textarea:focus-visible {
+    @apply outline-none;
   }
 }
 
-/* Components styling with dark mode colors */
 @layer components {
-  .chat-message {
-    @apply p-4 rounded-lg mb-4 max-w-4xl mx-auto;
-    background-color: #23263b; /* card bg */
-    color: #e0e7ff; /* faded light for text */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition
+      disabled:cursor-not-allowed disabled:opacity-60;
   }
-  
-  .user-message {
-    @apply bg-primary-500 text-white ml-auto;
+  .btn-primary {
+    @apply btn bg-teal-700 text-white shadow-sm hover:bg-teal-800 active:bg-teal-900;
   }
-  
-  .ai-message {
-    @apply bg-background-card border border-gray-700 text-gray-200;
-    background-color: #23263b;
-    border-color: #3b82f6;
+  .btn-outline {
+    @apply btn border border-teal-700/30 bg-white text-teal-800 hover:border-teal-700 hover:bg-teal-50;
   }
-  
-  .sidebar-item {
-    @apply p-3 rounded-lg cursor-pointer transition-colors duration-200;
-    color: #c7d2fe; /* light purple */
-  }
-  
-  .sidebar-item:hover {
-    @apply bg-accent-light text-white;
-    background-color: #c8b6ff;
-    color: white;
-  }
-  
-  .sidebar-item.active {
-    @apply bg-primary-600 border-l-4 border-primary-500 text-white;
-    background-color: #2563eb;
-    border-color: #a78bfa;
+  .btn-ghost {
+    @apply btn text-ink-600 hover:bg-paper-200 hover:text-ink;
   }
 
-  /* Scrollbar for sidebar (optional) */
-  .sidebar-container::-webkit-scrollbar {
+  .field-label {
+    @apply mb-1.5 block text-xs font-semibold uppercase tracking-wider text-ink-600;
+  }
+  .field-input {
+    @apply w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-[15px] text-ink placeholder-ink-300
+      shadow-[inset_0_1px_1px_rgba(29,37,38,0.03)] transition
+      focus:border-teal-600 focus:outline-none focus:ring-4 focus:ring-teal-700/10
+      disabled:bg-paper-50 disabled:text-ink-400;
+  }
+
+  .card {
+    @apply rounded-2xl border border-line bg-white shadow-card;
+  }
+
+  .alert-error {
+    @apply flex items-start gap-2 rounded-xl border border-crimson-200 bg-crimson-50 px-3.5 py-2.5 text-sm text-crimson-700;
+  }
+  .alert-success {
+    @apply flex items-start gap-2 rounded-xl border border-teal-200 bg-teal-50 px-3.5 py-2.5 text-sm text-teal-800;
+  }
+
+  /* Thin, quiet scrollbars */
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.paper.300') transparent;
+  }
+  .scroll-thin::-webkit-scrollbar {
     width: 8px;
   }
-  
-  .sidebar-container::-webkit-scrollbar-track {
-    background: #131827;
-  }
-  
-  .sidebar-container::-webkit-scrollbar-thumb {
-    background-color: #7c3aed;
-    border-radius: 10px;
-    border: 2px solid #131827;
+  .scroll-thin::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-paper-300;
   }
 }

@@ -8,10 +8,15 @@ class ChatMessageCreate(BaseModel):
 class ChatSessionTitleUpdate(BaseModel):
     title: str = Field(min_length=1, max_length=100)
 
+class SourceLink(BaseModel):
+    title: str
+    url: str
+
 class ChatMessageResponse(BaseModel):
     id: int
     question: str
     answer: str
+    sources: List[SourceLink] = []
     timestamp: datetime
     
     class Config:

@@ -1,278 +1,106 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Send, Mic, MicOff, AlertCircle } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ArrowUp, Mic, Square } from 'lucide-react';
+import { useSpeechInput } from '../../hooks/useSpeechInput';
+
+const MAX_LENGTH = 4000; // same limit as the backend
 
 const ChatInput = ({ onSendMessage, disabled }) => {
   const [message, setMessage] = useState('');
-  const [isRecording, setIsRecording] = useState(false);
-  const [isSupported, setIsSupported] = useState(false);
-  const [error, setError] = useState('');
-  const [permissionGranted, setPermissionGranted] = useState(false);
-  const recognitionRef = useRef(null);
-  const restartTimeoutRef = useRef(null);
+  const textareaRef = useRef(null);
+  const speech = useSpeechInput({
+    onText: (text) => setMessage((prev) => (prev ? `${prev.trimEnd()} ${text}` : text).slice(0, MAX_LENGTH)),
+  });
 
-  // Initialize speech recognition with multi-language support
-  const initializeSpeechRecognition = () => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    
-    if (!SpeechRecognition) {
-      setError('Speech recognition not supported. Please use Chrome, Edge, or Safari.');
-      return null;
-    }
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    
-    // UNIVERSAL LANGUAGE SUPPORT - Detects Hindi, Marathi, English automatically
-    recognition.lang = 'en-IN'; // Indian English base - best for multi-language detection
-    recognition.maxAlternatives = 3; // Get multiple alternatives for better accuracy
-    // Handle results
-    recognition.onresult = (event) => {
-      let finalTranscript = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript;
-        }
-      }
-      if (finalTranscript) {
-        // Clean and normalize the text (already in Roman/English format)
-        const cleanedText = finalTranscript.trim();
-        setMessage(prev => prev + cleanedText + ' ');
-      }
-    };
-    // Handle end - restart if still recording
-    recognition.onend = () => {
-      console.log('Speech recognition ended');
-      
-      if (isRecording) {
-        restartTimeoutRef.current = setTimeout(() => {
-          if (isRecording && recognitionRef.current) {
-            try {
-              recognitionRef.current.start();
-            } catch (err) {
-              console.log('Restart failed:', err);
-              setIsRecording(false);
-            }
-          }
-        }, 100);
-      }
-    };
-    // Handle errors
-    recognition.onerror = (event) => {
-      console.log('Speech error:', event.error);
-      
-      switch (event.error) {
-        case 'aborted':
-          console.log('Speech recognition aborted');
-          break;
-        case 'not-allowed':
-          setError('Microphone access denied. Please allow microphone permissions and refresh.');
-          setIsRecording(false);
-          setPermissionGranted(false);
-          break;
-        case 'no-speech':
-          // Don't show error for no speech
-          break;
-        case 'network':
-          setError('Speech recognition network error. Check internet connection.');
-          setIsRecording(false);
-          break;
-        case 'audio-capture':
-          setError('Microphone not found. Please check your microphone.');
-          setIsRecording(false);
-          break;
-        default:
-          setError(`Speech error: ${event.error}`);
-          setIsRecording(false);
-      }
-      
-      if (event.error !== 'no-speech' && event.error !== 'aborted') {
-        setTimeout(() => setError(''), 4000);
-      }
-    };
-    recognition.onstart = () => {
-      console.log('Multi-language speech recognition started');
-      setError('');
-    };
-    return recognition;
-  };
-
-  // Check browser support and permissions
+  // Grow with the text, up to ~6 lines. When empty, stay one line tall
+  // (a long placeholder would otherwise make the box grow on small screens).
   useEffect(() => {
-    const checkSupportAndPermissions = async () => {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      
-      if (!SpeechRecognition) {
-        setError('Speech recognition not supported. Please use Chrome, Edge, or Safari.');
-        return;
-      }
-      setIsSupported(true);
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach(track => track.stop());
-        setPermissionGranted(true);
-        
-        // Initialize speech recognition
-        recognitionRef.current = initializeSpeechRecognition();
-      } catch (err) {
-        console.log('Microphone permission error:', err);
-        setError('Microphone access denied. Please allow microphone permissions.');
-        setPermissionGranted(false);
-      }
-    };
-    checkSupportAndPermissions();
-    return () => {
-      if (restartTimeoutRef.current) {
-        clearTimeout(restartTimeoutRef.current);
-      }
-    };
-  }, [isRecording]);
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    if (message) el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+  }, [message]);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (message.trim() && !disabled) {
-      onSendMessage(message.trim());
-      setMessage('');
+  const isSmallScreen = typeof window !== 'undefined' && window.innerWidth < 640;
+  const placeholder = speech.listening
+    ? 'Listening… speak in English, Hindi or Hinglish'
+    : isSmallScreen
+      ? 'Ask about APSIT…'
+      : 'Ask about admissions, departments, faculty, placements…';
+
+  const send = () => {
+    const text = message.trim();
+    if (!text || disabled) return;
+    if (speech.listening) speech.stop();
+    onSendMessage(text);
+    setMessage('');
+  };
+
+  const handleKeyDown = (e) => {
+    // Enter sends, Shift+Enter adds a new line
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      send();
     }
   };
 
-  const requestMicrophonePermission = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach(track => track.stop());
-      setPermissionGranted(true);
-      setError('');
-      window.location.reload();
-    } catch (err) {
-      setError('Please allow microphone access in browser settings and refresh the page.');
-    }
-  };
-
-  const toggleRecording = async () => {
-    if (!isSupported) {
-      setError('Speech recognition not supported. Please use Chrome, Edge, or Safari.');
-      setTimeout(() => setError(''), 4000);
-      return;
-    }
-    if (!permissionGranted) {
-      await requestMicrophonePermission();
-      return;
-    }
-    if (isRecording) {
-      console.log('Stopping multi-language recording');
-      setIsRecording(false);
-      
-      if (restartTimeoutRef.current) {
-        clearTimeout(restartTimeoutRef.current);
-        restartTimeoutRef.current = null;
-      }
-      
-      try {
-        recognitionRef.current?.stop();
-      } catch (err) {
-        console.log('Stop error:', err);
-      }
-    } else {
-      console.log('Starting multi-language recording');
-      try {
-        setIsRecording(true);
-        recognitionRef.current?.start();
-        setError('');
-      } catch (err) {
-        console.log('Start error:', err);
-        setError('Failed to start recording. Please try again.');
-        setIsRecording(false);
-        setTimeout(() => setError(''), 3000);
-      }
-    }
-  };
-
-   return (
-    <div className="border-t border-background-dark bg-background-card px-4 py-3">
-      {/* Error message */}
-      {error && (
-        <div className="px-4 py-2 bg-red-900 border-b border-red-700 rounded text-red-300 flex items-center justify-between mb-2">
-          <div className="flex items-center space-x-2">
-            <AlertCircle className="h-4 w-4" />
-            <span className="text-sm">{error}</span>
+  return (
+    <div className="px-4 pb-4 pt-2 sm:px-6">
+      <div className="mx-auto max-w-3xl">
+        {speech.error && (
+          <div className="mb-2 flex items-center justify-between gap-3 rounded-xl border border-gold-200 bg-gold-50 px-3 py-2 text-xs text-gold-800">
+            <span>{speech.error}</span>
+            <button type="button" onClick={speech.clearError} className="font-semibold hover:underline">Dismiss</button>
           </div>
-          {error.includes('permission') && (
+        )}
+        <form
+          onSubmit={(e) => { e.preventDefault(); send(); }}
+          className={`flex items-end gap-2 rounded-2xl border bg-white p-2 shadow-composer transition focus-within:border-teal-600 focus-within:ring-4 focus-within:ring-teal-700/10 ${
+            speech.listening ? 'border-crimson-200' : 'border-line'
+          }`}
+        >
+          <textarea
+            ref={textareaRef}
+            rows={1}
+            value={message}
+            maxLength={MAX_LENGTH}
+            onChange={(e) => setMessage(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
+            className="max-h-[180px] min-h-[44px] flex-1 resize-none bg-transparent px-3 py-2.5 text-[15px] leading-relaxed text-ink placeholder-ink-300 focus:outline-none"
+            aria-label="Your question"
+          />
+          {speech.supported && (
             <button
-              onClick={requestMicrophonePermission}
-              className="text-sm bg-red-600 hover:bg-red-700 px-3 py-1 rounded"
+              type="button"
+              onClick={speech.toggle}
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition ${
+                speech.listening ? 'bg-crimson-50 text-crimson-600 hover:bg-crimson-100' : 'text-ink-400 hover:bg-paper-100 hover:text-teal-700'
+              }`}
+              title={speech.listening ? 'Stop voice input' : 'Speak your question'}
+              aria-label={speech.listening ? 'Stop voice input' : 'Start voice input'}
             >
-              Allow Microphone
+              {speech.listening ? <Square className="h-4 w-4 fill-current" /> : <Mic className="h-5 w-5" />}
             </button>
           )}
-        </div>
-      )}
-
-      {/* Recording indicator */}
-      {isRecording && (
-        <div className="px-4 py-2 bg-gradient-to-r from-green-900 to-primary-700 border-b border-green-700 rounded mb-2">
-          <div className="flex items-center justify-center space-x-2 text-green-300">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            <span className="text-sm font-medium">
-              🎤 Listening... Speak in Hindi, Hinglish, Marathi, or English
+          <button
+            type="submit"
+            disabled={disabled || !message.trim()}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-700 text-white shadow-sm transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-paper-300 disabled:text-white"
+            title="Send"
+            aria-label="Send"
+          >
+            <ArrowUp className="h-5 w-5" />
+          </button>
+        </form>
+        <p className="mt-2 text-center text-[11px] text-ink-400">
+          {speech.listening ? (
+            <span className="inline-flex items-center gap-1.5 text-crimson-600">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-crimson-500" /> Listening — press the square to stop
             </span>
-            <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
-          </div>
-        </div>
-      )}
-
-      {/* Input form */}
-      <form onSubmit={handleSubmit} className="flex items-center space-x-2">
-        <input
-          type="text"
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder={
-            isRecording
-              ? '🎤 Listening for your voice...'
-              : "Ask APSIT's AI Assistant"
-          }
-          className="flex-1 px-4 py-2 rounded-lg border border-background-dark bg-background-dark text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:bg-gray-900"
-          disabled={disabled}
-        />
-        <button
-          type="button"
-          onClick={toggleRecording}
-          disabled={disabled}
-          className={`px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-200 ${
-            isRecording
-              ? 'bg-red-700 hover:bg-red-800 focus:ring-red-600 text-white animate-pulse'
-              : !permissionGranted
-              ? 'bg-yellow-600 hover:bg-yellow-700 focus:ring-yellow-600 text-white'
-              : 'bg-gray-800 hover:bg-gray-700 focus:ring-gray-700 text-gray-300'
-          } disabled:opacity-50 disabled:cursor-not-allowed`}
-          title={
-            !permissionGranted
-              ? 'Click to allow microphone access'
-              : isRecording
-              ? 'Stop recording'
-              : 'Start voice input (Multi-language)'
-          }
-        >
-          {isRecording ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-        </button>
-        <button
-          type="submit"
-          disabled={disabled || !message.trim()}
-          className="px-4 py-2 bg-primary-500 hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
-        >
-          <Send className="h-4 w-4" />
-        </button>
-      </form>
-
-      {/* Help text */}
-      <div className="mt-2 text-xs text-gray-400 text-center">
-        {!isSupported
-          ? 'Speech recognition not supported - Please use Chrome, Edge, or Safari'
-          : !permissionGranted
-          ? '🔒 Click microphone to allow voice input'
-          : isRecording
-          ? '🎤 Recording active - Speak in Hindi, Hinglish, Marathi ya English'
-          : 'Smart Campus Connect is here, Ask about A. P Shah Institute of Technology'}
+          ) : (
+            'Answers are based on apsit.edu.in and may not cover everything. Check important details with the college office.'
+          )}
+        </p>
       </div>
     </div>
   );

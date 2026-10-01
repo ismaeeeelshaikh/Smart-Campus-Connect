@@ -1,21 +1,29 @@
 import axios from 'axios';
-
-const API_BASE_URL = '/api';
+import { API_BASE } from './config';
 
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: API_BASE,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
+export const getToken = () => localStorage.getItem('token');
+
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
+
+// Clears the saved login and sends the user to the login page (session expired / revoked)
+export const forceLogout = () => {
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+  window.location.href = '/login';
+};
 
 api.interceptors.response.use(
   (response) => response,
@@ -24,9 +32,7 @@ api.interceptors.response.use(
     // (e.g. wrong password on login) must NOT reload the page, or the error message is lost.
     const isAuthRequest = error.config?.url?.startsWith('/auth/');
     if (error.response?.status === 401 && !isAuthRequest) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
+      forceLogout();
     }
     return Promise.reject(error);
   }
@@ -34,6 +40,8 @@ api.interceptors.response.use(
 
 export const authAPI = {
   login: (userData) => api.post('/auth/login', userData),
+  requestSignupOtp: (email) => api.post('/auth/request-signup-otp', { email }),
+  completeSignup: (data) => api.post('/auth/complete-signup', data),
 };
 
 // Public chat for visitors without an account; nothing is saved on the server
@@ -49,18 +57,10 @@ export const adminAPI = {
 };
 
 export const chatSessionAPI = {
-  // Chat session management
-  createSession: (title) => api.post('/chat-sessions', { title }),
   getSessions: () => api.get('/chat-sessions'),
   getSession: (sessionId) => api.get(`/chat-sessions/${sessionId}`),
   updateSessionTitle: (sessionId, title) => api.put(`/chat-sessions/${sessionId}/title`, { title }),
   deleteSession: (sessionId) => api.delete(`/chat-sessions/${sessionId}`),
-  
-  // Messages in sessions
-  sendMessage: (sessionId, question) => api.post(`/chat-sessions/${sessionId}/messages`, { question }),
-  
-  // NEW: ChatGPT-like experience - start chat with first message
-  startChatSession: (question) => api.post('/chat-sessions/start', { question }),
 };
 
 export default api;

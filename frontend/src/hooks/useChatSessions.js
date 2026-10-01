@@ -1,188 +1,162 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { chatSessionAPI } from '../services/api';
+import { streamChat } from '../services/stream';
+import { apiErrorMessage } from '../services/validation';
+
+let nextId = 0;
+const uid = () => `m${Date.now()}-${nextId++}`;
+
+const toMessages = (sessionDetail) =>
+  sessionDetail.messages.flatMap((msg) => [
+    { id: `q${msg.id}`, type: 'user', content: msg.question, timestamp: msg.timestamp },
+    { id: `a${msg.id}`, type: 'ai', content: msg.answer, sources: msg.sources || [], timestamp: msg.timestamp },
+  ]);
 
 export const useChatSessions = () => {
   const [sessions, setSessions] = useState([]);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [currentSession, setCurrentSession] = useState(null);
   const [currentMessages, setCurrentMessages] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false); // waiting for / streaming an answer
+  const [loadingSession, setLoadingSession] = useState(false);
   const [error, setError] = useState(null);
-  const [isNewChat, setIsNewChat] = useState(true); // NEW: Track if this is a fresh chat
+  const [failedQuestion, setFailedQuestion] = useState(null); // for "Try again"
+  const [isNewChat, setIsNewChat] = useState(true); // a fresh chat isn't saved until the first answer
+  const abortRef = useRef(null);
 
-  const loadSessions = async () => {
-    try {
-      const response = await chatSessionAPI.getSessions();
-      setSessions(response.data.sessions);
-      
-      // If no sessions, start with empty new chat
-      if (response.data.sessions.length === 0) {
-        setIsNewChat(true);
-        setCurrentSession(null);
-        setCurrentMessages([]);
-      }
-    } catch (err) {
-      console.error('Failed to load sessions:', err);
-      setError('Failed to load chat sessions');
-    }
-  };
-
-  const createNewSession = async (title = 'New Chat') => {
-    try {
-      // For manual "New Chat" button - create empty session
-      const response = await chatSessionAPI.createSession(title);
-      const newSession = response.data;
-      setSessions(prev => [newSession, ...prev]);
-      setCurrentSession(newSession);
-      setCurrentMessages([]);
-      setIsNewChat(false);
-      return newSession;
-    } catch (err) {
-      console.error('Failed to create session:', err);
-      setError('Failed to create new chat');
-      throw err;
-    }
+  const stopStreaming = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
   };
 
   const startNewChat = () => {
-    // NEW: ChatGPT-like new chat - just clear interface, don't create session yet
+    stopStreaming();
     setCurrentSession(null);
     setCurrentMessages([]);
     setIsNewChat(true);
     setError(null);
+    setFailedQuestion(null);
+    setLoading(false);
   };
 
   const loadSession = async (sessionId) => {
+    stopStreaming();
+    setLoading(false);
+    setLoadingSession(true);
+    setError(null);
+    setFailedQuestion(null);
     try {
-      setLoading(true);
       const response = await chatSessionAPI.getSession(sessionId);
-      const sessionDetail = response.data;
-      
-      setCurrentSession(sessionDetail);
+      setCurrentSession(response.data);
+      setCurrentMessages(toMessages(response.data));
       setIsNewChat(false);
-      
-      // Convert messages to frontend format
-      const messages = sessionDetail.messages.flatMap(msg => [
-        { type: 'user', content: msg.question, timestamp: msg.timestamp },
-        { type: 'ai', content: msg.answer, timestamp: msg.timestamp }
-      ]);
-      
-      setCurrentMessages(messages);
     } catch (err) {
-      console.error('Failed to load session:', err);
-      setError('Failed to load chat session');
+      setError(apiErrorMessage(err, 'Could not open this chat.'));
     } finally {
-      setLoading(false);
+      setLoadingSession(false);
     }
   };
 
-  const sendMessage = async (message) => {
+  const sendMessage = async (text) => {
+    if (loading || !text.trim()) return;
+    stopStreaming();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setLoading(true);
     setError(null);
-    // Add user message immediately
-    const userMessage = { type: 'user', content: message, timestamp: new Date().toISOString() };
-    setCurrentMessages(prev => [...prev, userMessage]);
+    setFailedQuestion(null);
+    const now = new Date().toISOString();
+    const userMsg = { id: uid(), type: 'user', content: text, timestamp: now };
+    const aiId = uid();
+    setCurrentMessages((prev) => [...prev, userMsg, { id: aiId, type: 'ai', content: '', sources: [], streaming: true, timestamp: now }]);
+    const updateAi = (fn) => setCurrentMessages((prev) => prev.map((m) => (m.id === aiId ? fn(m) : m)));
+    const onToken = (piece) => updateAi((m) => ({ ...m, content: m.content + piece }));
 
     try {
       if (isNewChat) {
-        // NEW: ChatGPT-like experience - create session with first message
-        console.log('Starting new chat session with first message:', message);
-        const response = await chatSessionAPI.startChatSession(message);
-        
-        const newSession = response.data.session;
-        const aiMessageResponse = response.data.message;
-        
-        // Update state
-        setCurrentSession(newSession);
-        setSessions(prev => [newSession, ...prev]);
+        const done = await streamChat('/chat-sessions/start/stream', { question: text }, { onToken, signal: controller.signal });
+        setCurrentSession(done.session);
+        setSessions((prev) => [done.session, ...prev.filter((s) => s.id !== done.session.id)]);
         setIsNewChat(false);
-        
-        const aiMessage = { 
-          type: 'ai', 
-          content: aiMessageResponse.answer, 
-          timestamp: aiMessageResponse.timestamp 
-        };
-        setCurrentMessages(prev => [...prev, aiMessage]);
-        
+        updateAi((m) => ({ ...m, content: done.message.answer, sources: done.message.sources, streaming: false, timestamp: done.message.timestamp }));
       } else {
-        // Existing session - send message normally
-        if (!currentSession) {
-          throw new Error('No active chat session');
-        }
-        
-        const response = await chatSessionAPI.sendMessage(currentSession.id, message);
-        const aiMessage = { 
-          type: 'ai', 
-          content: response.data.answer, 
-          timestamp: response.data.timestamp 
-        };
-        setCurrentMessages(prev => [...prev, aiMessage]);
-        
-        // Update session in list (move to top)
-        setSessions(prev => {
-          const updated = prev.map(s => 
-            s.id === currentSession.id 
-              ? { ...s, updated_at: new Date().toISOString(), message_count: (s.message_count || 0) + 1 } 
-              : s
+        const sessionId = currentSession.id;
+        const done = await streamChat(`/chat-sessions/${sessionId}/messages/stream`, { question: text }, { onToken, signal: controller.signal });
+        updateAi((m) => ({ ...m, content: done.message.answer, sources: done.message.sources, streaming: false, timestamp: done.message.timestamp }));
+        // Move this chat to the top of the list
+        setSessions((prev) => {
+          const updated = prev.map((s) =>
+            s.id === sessionId ? { ...s, updated_at: new Date().toISOString(), message_count: (s.message_count || 0) + 1 } : s
           );
           return updated.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
         });
       }
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to send message');
-      // Remove the user message if sending failed
-      setCurrentMessages(prev => prev.filter(msg => msg !== userMessage));
-      throw err;
+      if (err.name === 'AbortError') return; // user switched chats
+      setError(err.message || 'Could not get an answer. Please try again.');
+      setFailedQuestion(text);
+      setCurrentMessages((prev) => prev.filter((m) => m.id !== aiId && m.id !== userMsg.id));
     } finally {
-      setLoading(false);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setLoading(false);
+      }
     }
   };
 
   const updateSessionTitle = async (sessionId, title) => {
     try {
       await chatSessionAPI.updateSessionTitle(sessionId, title);
-      setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, title } : s));
-      if (currentSession && currentSession.id === sessionId) {
-        setCurrentSession(prev => ({ ...prev, title }));
-      }
+      setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, title } : s)));
+      setCurrentSession((prev) => (prev && prev.id === sessionId ? { ...prev, title } : prev));
     } catch (err) {
-      console.error('Failed to update session title:', err);
-      setError('Failed to update chat title');
+      setError(apiErrorMessage(err, 'Could not rename the chat.'));
     }
   };
 
   const deleteSession = async (sessionId) => {
     try {
       await chatSessionAPI.deleteSession(sessionId);
-      setSessions(prev => prev.filter(s => s.id !== sessionId));
-      
-      if (currentSession && currentSession.id === sessionId) {
-        // After deleting current session, start fresh new chat
-        startNewChat();
-      }
-    } catch (err)
- {
-      console.error('Failed to delete session:', err);
-      setError('Failed to delete chat session');
+      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+      if (currentSession && currentSession.id === sessionId) startNewChat();
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Could not delete the chat.'));
     }
   };
 
+  // Load the chat list once, when the chat page opens
   useEffect(() => {
-    loadSessions();
+    let cancelled = false;
+    chatSessionAPI
+      .getSessions()
+      .then((response) => !cancelled && setSessions(response.data.sessions))
+      .catch((err) => !cancelled && setError(apiErrorMessage(err, 'Could not load your chats.')))
+      .finally(() => !cancelled && setSessionsLoaded(true));
+    return () => {
+      cancelled = true;
+      abortRef.current?.abort();
+    };
   }, []);
 
   return {
     sessions,
+    sessionsLoaded,
     currentSession,
     currentMessages,
     loading,
+    loadingSession,
     error,
-    isNewChat, // NEW: Expose whether this is a new unsaved chat
-    createNewSession, // OLD: Manual session creation
-    startNewChat, // NEW: ChatGPT-like new chat
+    failedQuestion,
+    isNewChat,
+    startNewChat,
     loadSession,
-    sendMessage, // UPDATED: Handles both new and existing sessions
+    sendMessage,
     updateSessionTitle,
     deleteSession,
-    loadSessions
+    dismissError: () => {
+      setError(null);
+      setFailedQuestion(null);
+    },
   };
 };

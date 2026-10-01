@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from ..database import Base
@@ -23,7 +23,8 @@ class ChatMessage(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     question = Column(Text, nullable=False)
     answer = Column(Text, nullable=False)
+    sources = Column(JSON, nullable=True)  # [{"title", "url"}] pages the answer cites
     timestamp = Column(DateTime, server_default=func.now())
-    
+
     chat_session = relationship("ChatSession", back_populates="messages")
     user = relationship("User")

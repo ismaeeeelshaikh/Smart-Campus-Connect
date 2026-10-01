@@ -1,74 +1,53 @@
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { requestPasswordReset } from "../../services/auth";
+import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Mail, Send } from 'lucide-react';
+import { requestPasswordReset } from '../../services/auth';
+import { apiErrorMessage } from '../../services/validation';
+import AuthLayout from './AuthLayout';
+import { ErrorAlert, Spinner, TextField } from './Fields';
 
 export default function ForgotPassword() {
-  const [email, setEmail] = useState("");
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setMessage("");
-    setError("");
+    setLoading(true);
+    setError('');
     try {
-      await requestPasswordReset(email);
-      setMessage("If your email exists, you will receive an OTP.");
-      navigate("/reset-password", { state: { email } });
+      await requestPasswordReset(email.trim().toLowerCase());
+      navigate('/reset-password', { state: { email: email.trim().toLowerCase() } });
     } catch (err) {
-      setError(err.response?.data?.detail || "Error sending OTP. Try again later.");
+      setError(apiErrorMessage(err, 'Could not send the code. Please try again later.'));
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background-dark">
-      <div className="max-w-md w-full bg-background-card rounded-lg shadow-lg p-8 space-y-6">
-        <div>
-          <h2 className="text-center text-3xl font-extrabold text-accent">
-            Forgot Password
-          </h2>
-        </div>
-        <form className="space-y-6" onSubmit={handleSubmit}>
-          <div>
-            <label htmlFor="email" className="block mb-1 text-gray-400 font-medium">
-              Email address
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              className="w-full px-3 py-2 rounded-md bg-background-dark border border-gray-700 placeholder-gray-400 text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-primary-600 transition"
-              placeholder="Enter your email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-            />
-          </div>
-          {message && (
-            <div className="text-green-500 bg-green-900 rounded-md p-2 text-center text-sm">{message}</div>
-          )}
-          {error && (
-            <div className="text-red-600 bg-red-900 rounded-md p-2 text-center text-sm">{error}</div>
-          )}
-          <div>
-            <button
-              type="submit"
-              className="w-full py-2 px-4 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-md focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-primary-500 disabled:opacity-50 disabled:pointer-events-none transition"
-            >
-              Send OTP
-            </button>
-          </div>
-          <div className="text-center">
-            <span
-              className="text-primary-600 hover:text-primary-500 cursor-pointer font-medium underline"
-              onClick={() => navigate("/login")}
-            >
-              Back to login
-            </span>
-          </div>
-        </form>
-      </div>
-    </div>
+    <AuthLayout
+      eyebrow="Password help"
+      title="Forgot your password?"
+      subtitle="Enter your account email and we'll send you a code to set a new password."
+      footer={
+        <Link to="/login" className="inline-flex items-center gap-1.5 text-sm font-semibold text-teal-700 hover:underline">
+          <ArrowLeft className="h-4 w-4" /> Back to sign in
+        </Link>
+      }
+    >
+      <form className="space-y-5" onSubmit={handleSubmit}>
+        <ErrorAlert>{error}</ErrorAlert>
+        <TextField
+          id="email" type="email" required autoComplete="email" icon={Mail}
+          label="Email" placeholder="yourid@apsit.edu.in"
+          value={email} onChange={(e) => setEmail(e.target.value)} disabled={loading}
+        />
+        <button type="submit" disabled={loading} className="btn-primary w-full py-3">
+          {loading ? <><Spinner /> Sending…</> : <><Send className="h-4 w-4" /> Send reset code</>}
+        </button>
+      </form>
+    </AuthLayout>
   );
 }

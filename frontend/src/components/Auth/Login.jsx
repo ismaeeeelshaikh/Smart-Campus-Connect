@@ -1,120 +1,88 @@
 import React, { useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { ArrowRight, Lock, Mail, MessagesSquare } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { apiErrorMessage } from '../../services/validation';
+import AuthLayout from './AuthLayout';
+import { ErrorAlert, PasswordField, Spinner, SuccessAlert, TextField } from './Fields';
 
 const Login = () => {
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-  });
+  const [formData, setFormData] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
   const { login } = useAuth();
   const navigate = useNavigate();
   // e.g. "Account created! Please sign in." after signup
   const successMessage = useLocation().state?.message;
 
   const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+    if (error) setError('');
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
-
     try {
       await login(formData);
       navigate('/');
     } catch (err) {
-      setError(err.response?.data?.detail || 'Login failed');
+      setError(apiErrorMessage(err, 'Sign in failed. Please try again.'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background-dark">
-      <div className="max-w-md w-full bg-background-card rounded-lg shadow-lg p-8 space-y-6">
+    <AuthLayout
+      eyebrow="Student sign in"
+      title="Welcome back"
+      subtitle="Sign in with your APSIT college email to continue your chats."
+      footer={
         <div>
-          <h2 className="text-center text-3xl font-extrabold text-accent">
-            Sign in to your account
-          </h2>
+          <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-wider text-ink-300">
+            <span className="h-px flex-1 bg-line" /> or <span className="h-px flex-1 bg-line" />
+          </div>
+          <Link to="/guest" className="btn-outline mt-5 w-full py-3">
+            <MessagesSquare className="h-[18px] w-[18px]" />
+            Chat as guest: no account needed
+          </Link>
+          <p className="mt-2 text-center text-xs text-ink-400">For future students and parents. Guest chats aren&apos;t saved.</p>
         </div>
-        <form className="space-y-5" onSubmit={handleSubmit}>
-          <div>
-            <label htmlFor="email" className="block mb-1 text-gray-400 font-medium">
-              Email address
-            </label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              required
-              autoComplete="email"
-              placeholder="Enter your email"
-              value={formData.email}
-              onChange={handleChange}
-              className="w-full px-3 py-2 rounded-md bg-background-dark border border-gray-700 placeholder-gray-400 text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-primary-600 transition"
-            />
-          </div>
-          <div>
-            <label htmlFor="password" className="block mb-1 text-gray-400 font-medium">
-              Password
-            </label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              required
-              autoComplete="current-password"
-              placeholder="Enter your password"
-              value={formData.password}
-              onChange={handleChange}
-              className="w-full px-3 py-2 rounded-md bg-background-dark border border-gray-700 placeholder-gray-400 text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-primary-600 transition"
-            />
-          </div>
-          {successMessage && !error && (
-            <div className="text-green-300 bg-green-950 rounded-md p-2 text-center text-sm">{successMessage}</div>
-          )}
-          {error && (
-            <div className="text-red-600 bg-red-900 rounded-md p-2 text-center text-sm">{error}</div>
-          )}
-          <div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-2 px-4 bg-primary-500 hover:bg-primary-600 text-white font-semibold rounded-md focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-primary-500 disabled:opacity-50 disabled:pointer-events-none transition"
-            >
-              {loading ? 'Signing in...' : 'Sign in'}
-            </button>
-          </div>
-          <div className="flex justify-between items-center text-sm text-gray-400">
-            <Link to="/forgot-password" className="hover:text-primary-600 underline">
+      }
+    >
+      <form className="space-y-5" onSubmit={handleSubmit}>
+        {!error && <SuccessAlert>{successMessage}</SuccessAlert>}
+        <ErrorAlert>{error}</ErrorAlert>
+        <TextField
+          id="email" name="email" type="email" required autoComplete="email" icon={Mail}
+          label="College email" placeholder="yourid@apsit.edu.in"
+          value={formData.email} onChange={handleChange}
+        />
+        <div>
+          <PasswordField
+            id="password" name="password" required autoComplete="current-password" icon={Lock}
+            label="Password" placeholder="Your password"
+            value={formData.password} onChange={handleChange}
+          />
+          <div className="mt-2 text-right">
+            <Link to="/forgot-password" className="text-sm font-medium text-teal-700 hover:text-teal-900 hover:underline">
               Forgot password?
             </Link>
-            <Link to="/register" className="hover:text-primary-600 underline font-medium">
-              Don't have an account? Sign up
-            </Link>
           </div>
-        </form>
-        <div className="border-t border-gray-700 pt-5 text-center">
-          <p className="text-sm text-gray-400 mb-3">
-            Not an APSIT student? Future students and parents can ask questions without an account.
-          </p>
-          <Link
-            to="/guest"
-            className="inline-block w-full py-2 px-4 border border-primary-500 text-primary-500 hover:bg-primary-600 hover:text-white font-semibold rounded-md transition"
-          >
-            Chat as guest
-          </Link>
         </div>
-      </div>
-    </div>
+        <button type="submit" disabled={loading} className="btn-primary w-full py-3">
+          {loading ? <><Spinner /> Signing in…</> : <>Sign in <ArrowRight className="h-4 w-4" /></>}
+        </button>
+        <p className="text-center text-sm text-ink-500">
+          New here?{' '}
+          <Link to="/register" className="font-semibold text-teal-700 hover:text-teal-900 hover:underline">
+            Create an account
+          </Link>
+        </p>
+      </form>
+    </AuthLayout>
   );
 };
 

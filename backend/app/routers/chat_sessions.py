@@ -6,6 +6,7 @@ from ..schemas.chat_session import (
     ChatSessionCreate, ChatSessionResponse, ChatSessionDetail,
     ChatSessionList, ChatMessageCreate, ChatMessageResponse, ChatSessionTitleUpdate)
 from ..services.chat_session import ChatSessionService
+from ..utils.sse import sse_response
 import logging
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,12 @@ async def start_chat_session(
     except Exception:
         raise _server_error("start the chat")
 
+@router.post("/start/stream")
+async def start_chat_session_stream(message: ChatMessageCreate, user=Depends(get_current_user)):
+    """Like /start, but the answer arrives word by word as server-sent events
+    ("token" events, then "done" with the saved session and message)."""
+    return sse_response(ChatSessionService.stream_new_session(user.id, message.question))
+
 @router.get("", response_model=ChatSessionList)
 async def get_chat_sessions(
     user=Depends(get_current_user),
@@ -84,6 +91,19 @@ async def send_message_to_session(
         raise HTTPException(status_code=404, detail=NOT_FOUND)
     except Exception:
         raise _server_error("send your message")
+
+@router.post("/{session_id}/messages/stream")
+async def send_message_to_session_stream(
+    session_id: int,
+    message: ChatMessageCreate,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)):
+    """Like /messages, but streamed as server-sent events ("token" ..., then "done")."""
+    try:
+        history = await ChatSessionService.get_history_for_message(session_id, user.id, db)
+    except ValueError:
+        raise HTTPException(status_code=404, detail=NOT_FOUND)
+    return sse_response(ChatSessionService.stream_message(session_id, user.id, message.question, history))
 
 @router.put("/{session_id}/title", response_model=ChatSessionResponse)
 async def update_session_title(

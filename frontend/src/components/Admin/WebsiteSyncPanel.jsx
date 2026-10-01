@@ -1,8 +1,17 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { RefreshCw, X, ExternalLink } from 'lucide-react';
+import { ExternalLink, Globe, RefreshCw, X } from 'lucide-react';
 import { adminAPI } from '../../services/api';
+import { apiErrorMessage } from '../../services/validation';
 
-const formatTime = (value) => (value ? new Date(value).toLocaleString() : '—');
+const formatTime = (value) => (value ? new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '—');
+
+const RESULT_TEXT = {
+  added: 'Added to the chatbot.',
+  updated: 'Changes found and updated.',
+  unchanged: 'No changes since the last sync.',
+  removed: 'Page no longer exists, so it was removed.',
+  'no content': 'Page has no text any more, so it was removed.',
+};
 
 // Admin-only: re-read apsit.edu.in now, and see what changed
 const WebsiteSyncPanel = () => {
@@ -19,13 +28,14 @@ const WebsiteSyncPanel = () => {
       setStatus(response.data);
       setError('');
     } catch (err) {
-      setError(err.response?.data?.detail || 'Could not load the sync status');
+      setError(apiErrorMessage(err, 'Could not load the sync status.'));
     }
   }, []);
 
-  useEffect(() => {
-    if (open) load();
-  }, [open, load]);
+  const toggleOpen = () => {
+    if (!open) load(); // fetch fresh status each time the panel opens
+    setOpen(!open);
+  };
 
   // While a sync is running, refresh the progress every 3 seconds
   useEffect(() => {
@@ -38,19 +48,11 @@ const WebsiteSyncPanel = () => {
     setError('');
     try {
       await adminAPI.startWebsiteSync();
-      setTimeout(load, 1000);
       setStatus((s) => ({ ...(s || {}), running: true }));
+      setTimeout(load, 1000);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Could not start the sync');
+      setError(apiErrorMessage(err, 'Could not start the sync.'));
     }
-  };
-
-  const RESULT_TEXT = {
-    added: 'Added to the chatbot.',
-    updated: 'Changes found and updated.',
-    unchanged: 'No changes since the last sync.',
-    removed: 'Page no longer exists, so it was removed.',
-    'no content': 'Page has no text any more, so it was removed.',
   };
 
   const syncOnePage = async (e) => {
@@ -65,7 +67,7 @@ const WebsiteSyncPanel = () => {
       setPageResult(`${title ? `"${title}": ` : ''}${RESULT_TEXT[result] || result}`);
       load();
     } catch (err) {
-      setError(err.response?.data?.detail || 'Could not update that page');
+      setError(apiErrorMessage(err, 'Could not update that page.'));
     } finally {
       setPageBusy(false);
     }
@@ -78,104 +80,108 @@ const WebsiteSyncPanel = () => {
   return (
     <div className="relative">
       <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex items-center space-x-2 px-3 py-1 text-accent hover:text-white rounded-md hover:bg-primary-600 transition-colors"
+        type="button"
+        onClick={toggleOpen}
+        className="btn-outline px-3 py-2"
         title="Sync the chatbot with apsit.edu.in"
       >
         <RefreshCw className={`h-4 w-4 ${running ? 'animate-spin' : ''}`} />
-        <span className="text-sm">Website sync</span>
+        <span className="hidden sm:inline">Website sync</span>
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-96 max-w-[90vw] bg-background-card border border-gray-700 rounded-lg shadow-xl z-50 p-4 text-sm text-gray-300">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-accent">Website sync (apsit.edu.in)</h3>
-            <button onClick={() => setOpen(false)} className="text-gray-500 hover:text-white" title="Close">
+        <div className="absolute right-0 z-50 mt-2 w-[24rem] max-w-[calc(100vw-2rem)] animate-fade-up rounded-2xl border border-line bg-white p-5 text-sm text-ink-700 shadow-lift">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-50 text-teal-700">
+                <Globe className="h-[18px] w-[18px]" />
+              </span>
+              <div>
+                <h3 className="font-serif text-base font-semibold text-ink">Website sync</h3>
+                <p className="text-xs text-ink-400">Keeps answers in step with apsit.edu.in</p>
+              </div>
+            </div>
+            <button type="button" onClick={() => setOpen(false)} className="rounded-lg p-1 text-ink-400 hover:bg-paper-100 hover:text-ink" aria-label="Close">
               <X className="h-4 w-4" />
             </button>
           </div>
 
           {running ? (
-            <div className="mb-3 p-2 rounded bg-background-dark border border-primary-600">
-              <div className="flex items-center gap-2 text-accent">
-                <RefreshCw className="h-4 w-4 animate-spin" /> Syncing…
+            <div className="mb-4 rounded-xl border border-teal-200 bg-teal-50 p-3">
+              <div className="flex items-center gap-2 font-semibold text-teal-800">
+                <RefreshCw className="h-4 w-4 animate-spin" /> Syncing the whole website…
               </div>
               {current && (
-                <div className="mt-1 text-xs text-gray-400">
+                <div className="mt-1 text-xs text-teal-700">
                   {current.pages_seen} pages checked · {current.pages_added + current.pages_updated} new or changed so far
                 </div>
               )}
             </div>
           ) : (
-            <button
-              onClick={startSync}
-              className="w-full mb-3 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-md transition"
-            >
-              Sync now
+            <button type="button" onClick={startSync} className="btn-primary mb-4 w-full">
+              <RefreshCw className="h-4 w-4" /> Sync whole website now
             </button>
           )}
 
-          <form onSubmit={syncOnePage} className="mb-3">
-            <label className="block text-xs text-gray-500 mb-1">Just edited a page? Update only that page (takes seconds):</label>
+          <form onSubmit={syncOnePage} className="mb-4 rounded-xl bg-paper-50 p-3 ring-1 ring-line">
+            <label htmlFor="sync-page-url" className="mb-1.5 block text-xs font-semibold text-ink-600">
+              Just edited a page? Update only that page (takes seconds)
+            </label>
             <div className="flex gap-2">
               <input
+                id="sync-page-url"
                 type="url"
                 value={pageUrl}
                 onChange={(e) => setPageUrl(e.target.value)}
                 placeholder="https://www.apsit.edu.in/civil-faculty"
-                className="flex-1 min-w-0 px-2 py-1 rounded bg-background-dark border border-gray-700 text-gray-200 text-xs focus:outline-none focus:ring-1 focus:ring-primary-600"
+                className="field-input min-w-0 flex-1 px-3 py-2 text-xs"
               />
-              <button
-                type="submit"
-                disabled={pageBusy || !pageUrl.trim()}
-                className="px-3 py-1 text-xs bg-primary-500 hover:bg-primary-600 text-white rounded disabled:opacity-50"
-              >
+              <button type="submit" disabled={pageBusy || !pageUrl.trim()} className="btn-primary px-3 py-2 text-xs">
                 {pageBusy ? 'Updating…' : 'Update'}
               </button>
             </div>
-            {pageResult && <div className="mt-1 text-xs text-green-400">{pageResult}</div>}
+            {pageResult && <div className="mt-2 text-xs font-medium text-teal-700">{pageResult}</div>}
           </form>
 
           {last ? (
-            <div className="mb-3 text-xs space-y-1">
+            <div className="mb-3 space-y-1 text-xs">
               <div>
-                <span className="text-gray-500">Last sync:</span> {formatTime(last.finished_at)}{' '}
-                <span className={last.status === 'success' ? 'text-green-400' : 'text-red-400'}>({last.status})</span>
+                <span className="text-ink-400">Last sync:</span> {formatTime(last.finished_at)}{' '}
+                <span className={`rounded-full px-1.5 py-0.5 font-semibold ${last.status === 'success' ? 'bg-teal-50 text-teal-700' : 'bg-crimson-50 text-crimson-600'}`}>
+                  {last.status}
+                </span>
               </div>
-              <div className="text-gray-400">
+              <div className="text-ink-500">
                 {last.pages_seen} checked · {last.pages_added} new · {last.pages_updated} changed · {last.pages_removed} removed
                 {last.pages_failed > 0 && ` · ${last.pages_failed} failed`}
               </div>
-              {last.error && <div className="text-yellow-400">{last.error}</div>}
+              {last.error && <div className="text-gold-700">{last.error}</div>}
             </div>
           ) : (
-            !running && <div className="mb-3 text-xs text-gray-400">No sync has finished yet.</div>
+            !running && <div className="mb-3 text-xs text-ink-400">No sync has finished yet.</div>
           )}
 
-          {status && (
-            <div className="text-xs text-gray-500 mb-2">Pages in the chatbot's knowledge: {status.pages_indexed}</div>
-          )}
+          {status && <div className="mb-2 text-xs text-ink-400">Pages in the chatbot&apos;s knowledge: <strong className="text-ink-600">{status.pages_indexed}</strong></div>}
 
           {status?.recently_changed?.length > 0 && (
             <div>
-              <div className="text-xs text-gray-500 mb-1">Recently changed pages</div>
-              <ul className="max-h-48 overflow-y-auto space-y-1">
+              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-400">Recently changed pages</div>
+              <ul className="scroll-thin max-h-44 space-y-1 overflow-y-auto">
                 {status.recently_changed.map((p) => (
-                  <li key={p.url} className="text-xs flex items-start justify-between gap-2">
-                    <a href={p.url} target="_blank" rel="noopener noreferrer"
-                       className="text-primary-500 hover:underline truncate flex items-center gap-1">
-                      {p.status === 'removed' && <span className="text-red-400">[removed]</span>}
+                  <li key={p.url} className="flex items-start justify-between gap-2 text-xs">
+                    <a href={p.url} target="_blank" rel="noopener noreferrer" className="flex min-w-0 items-center gap-1 font-medium text-teal-700 hover:underline">
+                      {p.status === 'removed' && <span className="text-crimson-600">[removed]</span>}
                       <span className="truncate">{p.title}</span>
-                      <ExternalLink className="h-3 w-3 flex-shrink-0" />
+                      <ExternalLink className="h-3 w-3 shrink-0" />
                     </a>
-                    <span className="text-gray-500 flex-shrink-0">{formatTime(p.last_changed)}</span>
+                    <span className="shrink-0 text-ink-400">{formatTime(p.last_changed)}</span>
                   </li>
                 ))}
               </ul>
             </div>
           )}
 
-          {error && <div className="mt-2 text-xs text-red-400">{error}</div>}
+          {error && <div className="mt-3 text-xs font-medium text-crimson-600">{error}</div>}
         </div>
       )}
     </div>

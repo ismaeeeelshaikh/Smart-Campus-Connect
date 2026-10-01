@@ -6,29 +6,28 @@ import ChatInterface from '../Chat/ChatInterface';
 import { useGuestChat } from '../../hooks/useGuestChat';
 
 const GuestChat = () => {
-  const { messages, loading, error, sendMessage } = useGuestChat();
+  const chat = useGuestChat();
 
   return (
-    <div className="h-screen flex flex-col">
+    <div className="flex h-screen flex-col overflow-hidden bg-paper">
       <Header guest />
-      <div className="bg-background-card border-b border-background-dark/80 px-6 py-2 flex items-center gap-2 text-sm text-gray-400">
-        <Info className="h-4 w-4 flex-shrink-0 text-primary-500" />
+      <div className="flex items-center gap-2 border-b border-gold-200 bg-gold-50 px-4 py-2 text-xs text-gold-800 sm:px-6 sm:text-sm">
+        <Info className="h-4 w-4 shrink-0" />
         <span>
-          You're chatting as a guest, so this chat isn't saved. APSIT students can{' '}
-          <Link to="/login" className="text-primary-500 hover:underline">sign in</Link>{' '}
-          with their college email to keep their chats.
+          You&apos;re chatting as a guest, so this chat isn&apos;t saved. APSIT students can{' '}
+          <Link to="/login" className="font-semibold underline decoration-gold-400 underline-offset-2">sign in</Link>{' '}
+          to keep their chats.
         </span>
       </div>
-      <div className="flex-1 flex overflow-hidden">
-        <ChatInterface
-          messages={messages}
-          onSendMessage={sendMessage}
-          loading={loading}
-          error={error}
-          currentSession={null}
-          isNewChat
-        />
-      </div>
+      <ChatInterface
+        messages={chat.messages}
+        onSendMessage={chat.sendMessage}
+        loading={chat.loading}
+        error={chat.error}
+        failedQuestion={chat.failedQuestion}
+        onDismissError={chat.dismissError}
+        greeting="Welcome! Ask anything about APSIT"
+      />
     </div>
   );
 };

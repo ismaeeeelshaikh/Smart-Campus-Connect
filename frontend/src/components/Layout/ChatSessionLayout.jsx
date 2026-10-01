@@ -1,59 +1,60 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Header from './Header';
 import ChatSessionsSidebar from '../Sidebar/ChatSessionsSidebar';
 import ChatInterface from '../Chat/ChatInterface';
 import { useChatSessions } from '../../hooks/useChatSessions';
+import { useAuth } from '../../context/AuthContext';
 
 const ChatSessionLayout = () => {
-  const {
-    sessions,
-    currentSession,
-    currentMessages,
-    loading,
-    error,
-    isNewChat,
-    startNewChat, // Updated to use startNewChat instead of createNewSession
-    loadSession,
-    sendMessage,
-    updateSessionTitle,
-    deleteSession
-  } = useChatSessions();
+  const chat = useChatSessions();
+  const { user, logout } = useAuth();
+  const [sidebarOpen, setSidebarOpen] = useState(false); // mobile drawer
 
-  const handleNewChat = () => {
-    // NEW: ChatGPT-like - just start fresh interface
-    startNewChat();
+  const closeAfter = (fn) => (...args) => {
+    setSidebarOpen(false);
+    return fn(...args);
   };
 
-  const handleSelectSession = async (sessionId) => {
-    try {
-      await loadSession(sessionId);
-    } catch (error) {
-      console.error('Failed to load session:', error);
-    }
-  };
+  const sidebar = (
+    <ChatSessionsSidebar
+      sessions={chat.sessions}
+      sessionsLoaded={chat.sessionsLoaded}
+      currentSession={chat.currentSession}
+      onNewChat={closeAfter(chat.startNewChat)}
+      onSelectSession={closeAfter(chat.loadSession)}
+      onUpdateTitle={chat.updateSessionTitle}
+      onDeleteSession={chat.deleteSession}
+      user={user}
+      onLogout={logout}
+    />
+  );
 
-  // REMOVED: Auto-creation useEffect - no longer needed!
+  const firstName = user?.username ? user.username.split(/[\s._-]/)[0] : '';
 
   return (
-    <div className="h-screen flex flex-col">
-      <Header />
-      <div className="flex-1 flex overflow-hidden">
-        <ChatSessionsSidebar
-          sessions={sessions}
-          currentSession={currentSession}
-          onNewChat={handleNewChat}
-          onSelectSession={handleSelectSession}
-          onUpdateTitle={updateSessionTitle}
-          onDeleteSession={deleteSession}
-          isNewChat={isNewChat} // NEW: Pass isNewChat state
-        />
+    <div className="flex h-screen overflow-hidden bg-paper">
+      {/* Desktop sidebar */}
+      <div className="hidden lg:block">{sidebar}</div>
+
+      {/* Mobile drawer */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-40 lg:hidden">
+          <div className="absolute inset-0 bg-teal-950/40" onClick={() => setSidebarOpen(false)} />
+          <div className="absolute inset-y-0 left-0 animate-fade-up shadow-lift">{sidebar}</div>
+        </div>
+      )}
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <Header title={chat.isNewChat ? 'New chat' : chat.currentSession?.title} onMenu={() => setSidebarOpen(true)} />
         <ChatInterface
-          messages={currentMessages}
-          onSendMessage={sendMessage}
-          loading={loading}
-          error={error}
-          currentSession={currentSession}
-          isNewChat={isNewChat} // NEW: Pass isNewChat state
+          messages={chat.currentMessages}
+          onSendMessage={chat.sendMessage}
+          loading={chat.loading}
+          loadingSession={chat.loadingSession}
+          error={chat.error}
+          failedQuestion={chat.failedQuestion}
+          onDismissError={chat.dismissError}
+          greeting={firstName ? `Hi ${firstName}, ask anything about APSIT` : 'Ask anything about APSIT'}
         />
       </div>
     </div>

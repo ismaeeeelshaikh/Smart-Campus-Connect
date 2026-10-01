@@ -1,90 +1,44 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { LogIn, Menu } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { LogIn, LogOut, User } from 'lucide-react';
 import WebsiteSyncPanel from '../Admin/WebsiteSyncPanel';
+import { Wordmark } from '../Brand/Brand';
 
-// `guest`: header for the public guest chat (shows "Sign in" instead of the user and "Logout")
-const Header = ({ guest = false }) => {
-  const { user, logout } = useAuth();
+/**
+ * Top bar of the chat area.
+ * - student chat: current chat title, admin "Website sync" button, menu button (mobile)
+ * - guest chat (`guest`): brand + "Sign in"
+ */
+const Header = ({ guest = false, title, onMenu }) => {
+  const { user } = useAuth();
 
-  const handleLogout = () => {
-    logout();
-  };
-
-  // Function to get display name in priority order
-  const getDisplayName = () => {
-    // 1. Try username first (preferred)
-    if (user?.username && user.username.trim()) {
-      return user.username;
-    }
-    // 2. If no username, extract name from email before @
-    if (user?.email) {
-      return user.email.split('@')[0];
-    }
-    // 3. Fallback to "User"
-    return 'User';
-  };
+  if (guest) {
+    return (
+      <header className="flex items-center justify-between gap-3 border-b border-line bg-white/90 px-4 py-3 backdrop-blur sm:px-6">
+        <Wordmark size={36} subtitle="APSIT Thane" />
+        <div className="flex shrink-0 items-center gap-3">
+          <span className="hidden rounded-full bg-gold-100 px-2.5 py-1 text-xs font-semibold text-gold-800 sm:inline">Guest</span>
+          <Link to="/login" className="btn-outline whitespace-nowrap px-3 py-2">
+            <LogIn className="h-4 w-4" /> Sign in
+          </Link>
+        </div>
+      </header>
+    );
+  }
 
   return (
-    <header className="bg-background-card border-b border-background-dark/80">
-      <div className="px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 flex items-center justify-center">
-              <img
-                src="/logo.png"
-                alt="Smart Campus Connect"
-                className="w-8 h-8 object-contain"
-                onError={e => {
-                  e.target.style.display = 'none';
-                  e.target.nextSibling.style.display = 'flex';
-                }}
-              />
-              <div
-                className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center"
-                style={{ display: 'none' }}
-              >
-                <span className="text-white font-semibold text-sm">SC</span>
-              </div>
-            </div>
-            <h1 className="text-xl font-semibold text-accent">
-              Smart Campus Connect
-            </h1>
-          </div>
-
-          {guest ? (
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-400">Guest</span>
-              <Link
-                to="/login"
-                className="flex items-center space-x-2 px-3 py-1 text-accent hover:text-white rounded-md hover:bg-primary-600 transition-colors"
-              >
-                <LogIn className="h-4 w-4" />
-                <span className="text-sm">Sign in</span>
-              </Link>
-            </div>
-          ) : (
-          <div className="flex items-center space-x-4">
-            {user?.is_admin && <WebsiteSyncPanel />}
-            <div className="flex items-center space-x-2 text-gray-300">
-              <User className="h-4 w-4" />
-              <span className="text-sm font-medium">
-                Welcome, {getDisplayName()}
-              </span>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="flex items-center space-x-2 px-3 py-1 text-accent hover:text-white rounded-md hover:bg-primary-600 transition-colors"
-              title="Logout"
-            >
-              <LogOut className="h-4 w-4" />
-              <span className="text-sm">Logout</span>
-            </button>
-          </div>
-          )}
+    <header className="flex min-h-[60px] items-center justify-between gap-3 border-b border-line bg-white/90 px-4 py-2.5 backdrop-blur sm:px-6">
+      <div className="flex min-w-0 items-center gap-2">
+        <button type="button" onClick={onMenu} className="-ml-1 rounded-lg p-2 text-ink-500 hover:bg-paper-100 lg:hidden" aria-label="Open chats">
+          <Menu className="h-5 w-5" />
+        </button>
+        <div className="min-w-0">
+          <h1 className="truncate font-serif text-base font-semibold text-teal-900 sm:text-lg">{title || 'New chat'}</h1>
+          <p className="hidden text-xs text-ink-400 sm:block">Answers from apsit.edu.in · sources linked</p>
         </div>
       </div>
+      {user?.is_admin && <WebsiteSyncPanel />}
     </header>
   );
 };

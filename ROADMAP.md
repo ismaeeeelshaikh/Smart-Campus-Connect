@@ -12,7 +12,7 @@ Tick each box as it's done.
 | 3 ✅ | Fix the RAG core + guest mode | Needed before adding live data, or the crawler has nowhere good to put it. Guest mode needs the new history handling. |
 | 4 ✅ | Live website sync | **Sir's requirement:** changes on apsit.edu.in show up in the chatbot |
 | 5 ✅ | Security hardening | Before real students use it |
-| 6 | Frontend polish | Show sources, streaming, remove dead code |
+| 6 ✅ | Frontend polish + redesign | Show sources, streaming, remove dead code |
 | 7 | Tests + CI | Keep everything working as we change things |
 | 8 | Deployment | Put it online |
 
@@ -307,14 +307,55 @@ Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a6
 
 ---
 
-## Phase 6: Frontend polish
+## Phase 6: Frontend polish + redesign ✅
 
-- [ ] **6.1** Show sources under each bot answer as clickable links (the backend returns `sources: [{url, title}]`).
-- [ ] **6.2** Streaming answers with server-sent events, so text appears while it's generated. Optional, but a big UX win.
-- [ ] **6.3** Read the API base URL from `VITE_API_URL` so the production build works without the Vite dev proxy.
-- [ ] **6.4** ESLint: the `lint` script exists but `eslint` isn't installed. Install it and fix the warnings.
-- [ ] **6.5** Proper loading, empty and error states. Show a friendly message when the backend is down.
-- [ ] **6.6** Use one auth source (`AuthContext`) and remove the duplicate `useAuth.js` logic.
+- [x] **6.1 Source chips under each answer.**
+  - `rag.finalize_answer()` turns the model's trailing "Source:" block (and inline links) into a `sources` list, **keeping only URLs that were in the retrieved context**, so invented or foreign links are dropped. The "Source:" text is removed from the answer.
+  - Sources are saved in `chat_messages.sources` (JSON, migration `f19fd24435ac`) and returned by every chat and guest endpoint.
+  - The UI shows them as chips (PDFs get a document icon).
+- [x] **6.2 Streaming answers (server-sent events):**
+  - endpoints: `POST /chat-sessions/start/stream`, `POST /chat-sessions/{id}/messages/stream`, `POST /guest/chat/stream`
+  - events: `token`, then `done` (saved message/session + sources), or `error` with a friendly message
+  - the message is saved after the stream completes, using its own DB session
+  - frontend: `services/stream.js` reads the stream with `fetch`; typing dots until the first word, then a blinking caret
+- [x] **6.3** `VITE_API_URL` (`src/services/config.js`, `frontend/.env.example`) is used by axios and the stream client. Signup/OTP pages now use the shared API client instead of hard-coded `fetch('/api/...')`.
+- [x] **6.4 ESLint 9** with flat config (`eslint.config.js`: React, hooks, refresh). `npm run lint` → 0 errors, 1 harmless warning (`AuthContext.jsx` exports a hook next to the provider; it only affects dev hot reload). Two "setState in effect" errors were fixed by loading data in a promise callback / click handler.
+- [x] **6.5 States:**
+  - **Errors:** "Can't reach the server…" for network errors; chat errors offer **Try again**.
+  - **Loading:** skeleton rows while chats load, "Opening chat…" when switching chats, and an empty-state message when there are no chats.
+  - **Login:** wrong password keeps its message; 429 messages are shown as is.
+- [x] **6.6** One auth source (`AuthContext`); the duplicate `useAuth.js` was removed in Phase 2.
+
+**Redesign ("APSIT Heritage")**
+- **Brand:** colours from the college crest: teal `#145C5F`, gold `#E0A91B`, crimson `#A51D2D` on paper `#F7F4EC`. No purple/neon "AI app" look. Literata (serif) + Hanken Grotesk, bundled with `@fontsource` (no Google Fonts request). Concepts drafted in Google Stitch, then built in React/Tailwind with real content only (Stitch's invented names, links and "attendance" features were left out).
+- **Auth pages** (sign in, sign up, OTP, forgot/reset password) share `AuthLayout`:
+  - a teal brand panel with the real crest and three honest feature points
+  - a form card with icon inputs, a show/hide password toggle, and inline errors (no more `alert()` popups)
+- **Chat:**
+  - **Sidebar:** white, with the crest wordmark, "New chat", recent chats (relative time, gold bar on the active one, rename and inline delete confirmation), and a user card with sign-out at the bottom.
+  - **Top bar:** chat title + the admin "Website sync" button (restyled panel).
+  - **Welcome screen:** crest, greeting with the user's name, and 4 suggestion cards.
+  - **Messages:** teal user bubbles; white answer cards with crest avatar, markdown with tables (`remark-gfm`), gold bullets, source chips and a copy button.
+  - **Composer:** grows with the text; Enter sends, Shift+Enter adds a new line; mic button.
+- **Guest page:** same chat with a "Guest" header and a "not saved" notice.
+- **Mobile:** the sidebar becomes a drawer, the header is compact, and there's a short placeholder.
+- **Voice input** rewritten as `useSpeechInput`: the microphone permission is asked **only when the mic is pressed** (it used to be on every page load), and it restarts after pauses.
+- **Clean-up:** `react-linkify` removed; `lucide-react` updated 0.294 → 1.49; `.env.*` git-ignored (`frontend/.env.production` would have been committed).
+
+**Verified on 2026-10-01:**
+- **API:** 81/81 checks (earlier phases + sources saved/returned, streamed new chat and follow-up saved with history, 404/401 on streams, guest stream, a failing stream → friendly `error` event).
+- **Frontend:** `npm run build` and `npm run lint` (0 errors) pass.
+- **Screenshots in Edge (Playwright), desktop + mobile:**
+  - login and register (inline validation)
+  - guest welcome, streaming and answer (real AI: "Dr. Mugdha Agarwadkar, 17 years", chip "Civil Faculty")
+  - student welcome and conversation (streamed follow-up, gold bullets, chips)
+  - mobile guest answer ("Dr. Uttam D. Kolekar", chip "About Us") and mobile drawer
+- **Bugs found and fixed during the screenshots:** a gold focus ring showed inside text inputs; mobile header wrapping; the welcome screen scrolled itself to the bottom; a long placeholder made the composer 3 lines tall on mobile.
+
+**Not done / ideas:**
+- a "Stop generating" button
+- a dark mode
+- the "Source:" chips depend on the model citing pages; if it cites nothing, no chips are shown
 
 ---
 
@@ -352,3 +393,4 @@ Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a6
 | 2026-10-01 | Phase 3 | Async RAG, persistent hybrid-search index, DB history, new prompt, guest mode; 36/36 API checks pass |
 | 2026-10-01 | Phase 4 | Live website sync: crawler, incremental index, scheduler, admin panel + single-page update; 1,046 pages indexed; 49/49 checks + demo pass |
 | 2026-10-01 | Phase 5 | Rate limits, hashed OTPs with attempt limits, password rules, sessions revoked on password reset, security headers; 70/70 checks pass |
+| 2026-10-01 | Phase 6 | APSIT Heritage redesign (Stitch concepts), streaming answers, source chips, VITE_API_URL, ESLint, error states; 81/81 API checks |
