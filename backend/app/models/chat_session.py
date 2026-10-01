@@ -14,6 +14,9 @@ class ChatSession(Base):
 
     user = relationship("User", back_populates="chat_sessions")
     messages = relationship("ChatMessage", back_populates="chat_session", cascade="all, delete-orphan")
+    # The database deletes the PDF and its chunks together with the chat (ON DELETE CASCADE)
+    document = relationship("ChatDocument", back_populates="chat_session", uselist=False,
+                            cascade="all, delete-orphan", passive_deletes=True)
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"

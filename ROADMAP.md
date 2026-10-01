@@ -434,6 +434,17 @@ Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a6
 
 **Done when:** the app runs at a public HTTPS URL, survives a restart without losing data, and the crawler updates it on schedule.
 
+### Extra feature: ask about a PDF (2026-10-02)
+
+- [x] **PDF upload in chats** (students only, one PDF per chat). Endpoints: `POST /chat-sessions/document` (new chat about a PDF), `PUT /chat-sessions/{id}/document` (attach / replace), `DELETE /chat-sessions/{id}/document`; the chat detail and list show the PDF.
+  - Only the text is kept (`chat_documents` + `chat_document_chunks`, deleted with the chat by `ON DELETE CASCADE`); the file isn't stored.
+  - Upload reads and stores the text (~1 s). Embeddings (same model as the knowledge base) are computed in the background, because on a CPU bge-base needs ~1.4 s per chunk (measured: a 2-page PDF took 20 s when done during the upload). Unindexed chunks are found by keywords; indexing cut off by a restart resumes at startup.
+  - Retrieval: a PDF of ≤ 5 chunks goes into the context whole (so "summarize this" works); longer ones are searched (hybrid) with the beginning as fallback; plus 3 knowledge-base chunks. Prompt rule 10: the PDF is the user's own document, not official college information.
+  - Sources: PDF pages that contain a fact from the answer become chips ("file.pdf · page 1", no link). Facts now include times/dates like "05:00" and "09-09-2026", and years alone no longer count (they matched almost every page). In a PDF chat, website pages are listed only when the model cites them.
+  - Limits: `%PDF` check, password-protected and scanned PDFs refused with a clear message, `UPLOAD_MAX_MB` = 10 (also checked from `Content-Length` before the body is read, and by Caddy), `UPLOAD_MAX_PAGES` = 100, 600 chunks, 20 uploads/hour per student.
+  - Frontend: paperclip in the composer, PDF pill (name, pages, remove), "PDF ready" screen with suggested questions, page chips, PDF icon in the sidebar.
+  - Verified with real APSIT PDFs (an admission schedule and an event report): correct answers in English and Hinglish with page chips; upload 0.8–1.5 s; 121 backend tests pass.
+
 ---
 
 ## Progress log
@@ -453,3 +464,4 @@ Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a6
 | 2026-10-01 | After Phase 6 | Full name instead of username, multilingual answers (Hindi/Marathi/Hinglish), friendly AI rate-limit message; 89/89 checks |
 | 2026-10-01 | Phase 7 | 100 pytest tests, crawler/KB/sync/RAG unit tests, answer-quality script (91% → fixes), ruff + GitHub Actions CI |
 | 2026-10-01 | Phase 8 (8.0–8.4) | LLM configurable (OpenAI-compatible: Groq now, DGX later), Docker + Caddy + compose, /health with DB/KB/LLM, sync-failure emails, daily backups, DEPLOYMENT.md; 109 tests pass. 8.5 hosting: Oracle Cloud Always Free recommended for now |
+| 2026-10-02 | PDF upload | Students can ask about their own PDFs: text-only storage, background embeddings, page chips; 121 tests pass |

@@ -10,7 +10,7 @@ import { Wordmark } from '../Brand/Brand';
  * - student chat: current chat title, admin "Website sync" button, menu button (mobile)
  * - guest chat (`guest`): brand + "Sign in"
  */
-const Header = ({ guest = false, title, onMenu }) => {
+const Header = ({ guest = false, title, onMenu, hasPdf = false }) => {
   const { user } = useAuth();
 
   if (guest) {
@@ -35,7 +35,9 @@ const Header = ({ guest = false, title, onMenu }) => {
         </button>
         <div className="min-w-0">
           <h1 className="truncate font-serif text-base font-semibold text-teal-900 sm:text-lg">{title || 'New chat'}</h1>
-          <p className="hidden text-xs text-ink-400 sm:block">Answers from apsit.edu.in · sources linked</p>
+          <p className="hidden text-xs text-ink-400 sm:block">
+            {hasPdf ? 'Answers from your PDF and apsit.edu.in' : 'Answers from apsit.edu.in · sources linked'}
+          </p>
         </div>
       </div>
       {user?.is_admin && <WebsiteSyncPanel />}

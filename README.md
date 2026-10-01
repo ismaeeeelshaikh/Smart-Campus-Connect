@@ -98,6 +98,16 @@ The UI uses an "APSIT Heritage" design system taken from the college crest: deep
 - **Mobile:** the sidebar becomes a drawer behind the menu button.
 - **Languages:** ask in English, Hindi, Marathi or Hinglish and the answer comes back in the same language (Hinglish in English letters). Non-English questions are translated into English for the search, because the website data is English. Names, numbers and links stay exactly as on the website.
 - **Profile:** students sign up with their full name (not a unique username) and can change it from the sidebar.
+- **Ask about a PDF:** students can attach a PDF (notice, syllabus, timetable…) with the paperclip and ask about it; see [PDF upload](#pdf-upload).
+
+## PDF upload
+
+Logged-in students can attach one PDF per chat (the paperclip in the message box). Guests can't, because uploads use the server's CPU and belong to a saved chat.
+
+- **What's kept:** only the PDF's text, split into chunks, stored with the chat in PostgreSQL. The file itself isn't stored. Deleting the chat deletes the PDF; a new upload replaces the old one.
+- **Fast upload:** the text is read and saved in about a second. The chunks' embeddings are computed afterwards in the background (on a CPU about a second per chunk); until then those chunks are found by keyword search. Indexing cut off by a restart is finished at the next start.
+- **Answers:** a short PDF (up to 5 chunks, e.g. a notice of a few pages) goes into the AI's context whole; a longer one is searched (keywords + meaning). A few website chunks are added too, so questions can mix the PDF with college information. Answers show chips such as "notice.pdf · page 2". The PDF is treated as the student's own document, not official college information.
+- **Limits:** text PDFs only (scanned images have no text to read), `UPLOAD_MAX_MB` (default 10) and `UPLOAD_MAX_PAGES` (default 100), 20 uploads per student per hour. PDFs made from Word text boxes (one word per line) are joined back into sentences.
 
 ## LLM
 
@@ -148,7 +158,7 @@ Visitors without an `@apsit.edu.in` email (future students, parents) can click *
 
 ## Testing
 
-**Automated tests** (backend, ~100 tests, about 2 minutes):
+**Automated tests** (backend, ~120 tests, about 2–3 minutes):
 
 ```powershell
 cd backend
@@ -162,6 +172,7 @@ pytest
   - signup/OTP rules, login, profile, password reset, rate limits, security headers
   - chats (incl. streaming, sources, and that one student can't see another's chats), guest chat, admin endpoints
   - crawler (on a saved real page), knowledge base, website sync safety rules, RAG source and language handling
+  - PDF upload: upload/replace/remove, limits and bad files, privacy, background indexing and how the PDF is searched
 - **Lint:** `ruff check .` (backend), `npm run lint` (frontend)
 
 **Answer quality** (needs the backend running with the real knowledge base and LLM): asks 22 real questions (HODs, principal, fees, contacts, Hindi/Marathi/Hinglish…) and checks the facts:

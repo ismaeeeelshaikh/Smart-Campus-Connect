@@ -57,11 +57,22 @@ export const adminAPI = {
   syncOnePage: (url) => api.post('/admin/website-sync/page', { url }),
 };
 
+const pdfForm = (file) => {
+  const form = new FormData();
+  form.append('file', file);
+  return form;
+};
+const multipart = { headers: { 'Content-Type': 'multipart/form-data' } };
+
 export const chatSessionAPI = {
   getSessions: () => api.get('/chat-sessions'),
   getSession: (sessionId) => api.get(`/chat-sessions/${sessionId}`),
   updateSessionTitle: (sessionId, title) => api.put(`/chat-sessions/${sessionId}/title`, { title }),
   deleteSession: (sessionId) => api.delete(`/chat-sessions/${sessionId}`),
+  // PDFs: a new chat about a PDF, or attach / replace / remove the PDF of an existing chat
+  startWithPdf: (file) => api.post('/chat-sessions/document', pdfForm(file), multipart),
+  uploadPdf: (sessionId, file) => api.put(`/chat-sessions/${sessionId}/document`, pdfForm(file), multipart),
+  removePdf: (sessionId) => api.delete(`/chat-sessions/${sessionId}/document`),
 };
 
 export default api;

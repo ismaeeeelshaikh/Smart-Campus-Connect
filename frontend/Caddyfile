@@ -13,6 +13,10 @@
 
 	# /api/chat-sessions -> http://backend:8000/chat-sessions
 	handle_path /api/* {
+		# PDF uploads are the largest requests (UPLOAD_MAX_MB, default 10 MB)
+		request_body {
+			max_size 12MB
+		}
 		reverse_proxy backend:8000 {
 			# Send streamed answers (server-sent events) word by word instead of buffering them
 			flush_interval -1

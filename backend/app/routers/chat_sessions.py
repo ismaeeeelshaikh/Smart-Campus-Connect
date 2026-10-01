@@ -1,12 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
+from ..config import settings
 from ..database import get_db
 from ..dependencies import get_current_user
 from ..schemas.chat_session import (
     ChatSessionCreate, ChatSessionResponse, ChatSessionDetail,
-    ChatSessionList, ChatMessageCreate, ChatMessageResponse, ChatSessionTitleUpdate)
+    ChatSessionList, ChatMessageCreate, ChatMessageResponse, ChatSessionTitleUpdate,
+    DocumentInfo, DocumentUploadResponse)
 from ..services.chat_session import ChatSessionService
+from ..services.documents import DocumentError, clean_filename
 from ..services.rag import AssistantBusy
+from ..utils.rate_limit import enforce
 from ..utils.sse import sse_response
 import logging
 
@@ -21,6 +25,16 @@ def _server_error(action: str) -> HTTPException:
     # Full details go to the server log only; the user gets a generic message
     logger.exception(f"Error while trying to {action}")
     return HTTPException(status_code=500, detail=f"Could not {action}. Please try again.")
+
+
+async def _read_pdf(file: UploadFile, user) -> tuple[str, bytes]:
+    """Rate-limit the upload and read it, refusing files over UPLOAD_MAX_MB."""
+    enforce("pdf_upload:user", str(user.id))
+    max_bytes = settings.upload_max_mb * 1024 * 1024
+    data = await file.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise HTTPException(status_code=413, detail=f"The PDF is too large. The limit is {settings.upload_max_mb} MB.")
+    return clean_filename(file.filename), data
 
 
 @router.post("", response_model=ChatSessionResponse)
@@ -56,6 +70,55 @@ async def start_chat_session_stream(message: ChatMessageCreate, user=Depends(get
     """Like /start, but the answer arrives word by word as server-sent events
     ("token" events, then "done" with the saved session and message)."""
     return sse_response(ChatSessionService.stream_new_session(user.id, message.question))
+
+@router.post("/document", response_model=DocumentUploadResponse)
+async def start_chat_with_document(
+    file: UploadFile = File(...),
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)):
+    """Start a new chat about an uploaded PDF. Only the PDF's text is kept, with the chat."""
+    filename, data = await _read_pdf(file, user)
+    try:
+        session, document = await ChatSessionService.create_session_with_document(user.id, filename, data, db)
+    except DocumentError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise _server_error("read the PDF")
+    logger.info(f"Chat session {session.id} started with a PDF for user {user.id}")
+    return {"session": session, "document": document}
+
+@router.put("/{session_id}/document", response_model=DocumentInfo)
+async def upload_document(
+    session_id: int,
+    file: UploadFile = File(...),
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)):
+    """Attach a PDF to this chat (replaces the chat's earlier PDF)."""
+    filename, data = await _read_pdf(file, user)
+    try:
+        return await ChatSessionService.attach_document(session_id, user.id, filename, data, db)
+    except ValueError:
+        raise HTTPException(status_code=404, detail=NOT_FOUND)
+    except DocumentError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise _server_error("read the PDF")
+
+@router.delete("/{session_id}/document")
+async def delete_document(
+    session_id: int,
+    user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)):
+    """Remove this chat's PDF."""
+    try:
+        removed = await ChatSessionService.delete_document(session_id, user.id, db)
+    except ValueError:
+        raise HTTPException(status_code=404, detail=NOT_FOUND)
+    except Exception:
+        raise _server_error("remove the PDF")
+    if not removed:
+        raise HTTPException(status_code=404, detail="This chat has no PDF")
+    return {"message": "PDF removed"}
 
 @router.get("", response_model=ChatSessionList)
 async def get_chat_sessions(
@@ -105,10 +168,10 @@ async def send_message_to_session_stream(
     db: AsyncSession = Depends(get_db)):
     """Like /messages, but streamed as server-sent events ("token" ..., then "done")."""
     try:
-        history = await ChatSessionService.get_history_for_message(session_id, user.id, db)
+        history, document = await ChatSessionService.get_history_for_message(session_id, user.id, db)
     except ValueError:
         raise HTTPException(status_code=404, detail=NOT_FOUND)
-    return sse_response(ChatSessionService.stream_message(session_id, user.id, message.question, history))
+    return sse_response(ChatSessionService.stream_message(session_id, user.id, message.question, history, document))
 
 @router.put("/{session_id}/title", response_model=ChatSessionResponse)
 async def update_session_title(

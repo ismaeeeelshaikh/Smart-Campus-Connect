@@ -12,6 +12,7 @@ from openai import APIConnectionError, InternalServerError, RateLimitError
 # (which use a stub instead) start faster.
 
 from ..config import settings
+from .documents import DocumentIndex
 from .knowledge_base import KnowledgeBase
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,11 @@ History = list[tuple[str, str]]
 MAX_HISTORY_TURNS = 4
 MAX_HISTORY_ANSWER_CHARS = 1500
 CONTEXT_CHUNKS = 6
+# In a chat with an uploaded PDF: this many chunks from the PDF plus a few from the knowledge base.
+# A PDF of up to SMALL_DOCUMENT_CHUNKS chunks (a notice of a few pages) goes into the context whole.
+DOCUMENT_CHUNKS = 4
+DOCUMENT_KB_CHUNKS = 3
+SMALL_DOCUMENT_CHUNKS = 5
 CITATION_MARK_RE = re.compile(r"【[^】]*】")
 # A trailing "Source:" / "**Sources:**" block written by the model (turned into source chips)
 SOURCE_LABEL_RE = re.compile(r"^\s*[*_]*\s*(?:sources?|source\(s\)|references?|स्रोत|स्त्रोत|संदर्भ)\s*[*_]*\s*:", re.I)
@@ -33,6 +39,9 @@ SOURCE_BLOCK_LINE_RE = re.compile(r"^\s*(?:[-*•]\s+.{0,200}|\[[^\]]*\]\([^)]+\
 # Facts in an answer that can be checked against the retrieved pages (bold terms, 3+ digit numbers)
 BOLD_RE = re.compile(r"\*\*([^*]{3,80})\*\*")
 NUMBER_RE = re.compile(r"\d[\d,]{2,}")
+YEAR_RE = re.compile(r"(19|20)\d\d")
+# Times and dates written with digits ("05:00", "09-09-2026"): models often keep them as in the context
+CLOCK_OR_DATE_RE = re.compile(r"(?<![\d:.\-/])\d{1,2}(?::\d{2}|[-/.]\d{1,2}[-/.]\d{2,4})(?![\d:\-/])")
 MAX_INFERRED_SOURCES = 2
 
 # ---- Language handling ----
@@ -77,8 +86,9 @@ Rules:
 5. Be friendly and concise. Use short paragraphs, bullet points or tables when they make the answer clearer.
 6. Each context entry says where it comes from. Entries from the official APSIT website are the most up to date: if they disagree with an entry from a college data file, trust the website.
 7. When your answer uses website entries, end it with a line "Source:" followed by the page link(s) you used, as markdown links. Don't list sources you didn't use, and don't put context numbers like [1] or 【1】 in the text.
-8. If a question has nothing to do with APSIT or college life, politely say you can only help with APSIT-related questions.
-9. Reply in the same language and script as the user's question (English, Hindi, Marathi or Hinglish). The CONTEXT is in English: translate the facts, but keep people's names, department and course names, numbers, fees, dates, email addresses and links exactly as written in the CONTEXT (do not transliterate names into another script)."""
+8. If a question has nothing to do with APSIT, college life or a PDF the user uploaded, politely say you can only help with APSIT-related questions.
+9. Reply in the same language and script as the user's question (English, Hindi, Marathi or Hinglish). The CONTEXT is in English: translate the facts, but keep people's names, department and course names, numbers, fees, dates, email addresses and links exactly as written in the CONTEXT (do not transliterate names into another script).
+10. Context entries marked "PDF uploaded by the user" come from the user's own document in this chat. Use them to answer questions about that document (summaries, explanations, facts in it), even if it isn't about APSIT. It is not an official APSIT source, so don't present it as official college information unless website entries say the same. You may mention the page, e.g. "(page 3)", but don't list the PDF in the "Source:" line."""
 
 
 class AssistantBusy(Exception):
@@ -129,7 +139,8 @@ class RAGService:
             logger.warning("Query translation failed; searching with the original question", exc_info=True)
             return question
 
-    async def _retrieve(self, question: str, history: History, search_query: Optional[str] = None) -> list[dict]:
+    async def _retrieve(self, question: str, history: History, search_query: Optional[str] = None,
+                        document: Optional[DocumentIndex] = None) -> list[dict]:
         # Search with the English query; for Hinglish also with the original words (names in English
         # letters match better there; Devanagari text would only match unrelated Devanagari pages).
         # For follow-ups like "what is her qualification?" also search with the previous question attached.
@@ -141,17 +152,30 @@ class RAGService:
         results = await asyncio.gather(
             *(asyncio.to_thread(self.kb.search, q, CONTEXT_CHUNKS) for q in queries)
         )
-        best: dict[str, dict] = {}
-        for hit in (h for hits in results for h in hits):
-            if hit["id"] not in best or hit["score"] > best[hit["id"]]["score"]:
-                best[hit["id"]] = hit
-        return sorted(best.values(), key=lambda h: h["score"], reverse=True)[:CONTEXT_CHUNKS]
+        if document is None:
+            return _merge(results, CONTEXT_CHUNKS)
+        # A chat with an uploaded PDF: the PDF first, then a few chunks from the knowledge base
+        kb_hits = _merge(results, DOCUMENT_KB_CHUNKS)
+        if len(document.texts) <= SMALL_DOCUMENT_CHUNKS:
+            return document.first(SMALL_DOCUMENT_CHUNKS) + kb_hits
+        # A longer PDF is searched, also with the question as typed (the PDF may be in the user's language).
+        # Chunks still waiting for their embedding are found by keywords only.
+        doc_queries = list(dict.fromkeys([*queries, question]))
+        if document.vector_ids:
+            vectors = await asyncio.gather(*(asyncio.to_thread(self.kb.embed_query, q) for q in doc_queries))
+        else:
+            vectors = [None] * len(doc_queries)
+        doc_results = [document.search(q, v, DOCUMENT_CHUNKS) for q, v in zip(doc_queries, vectors, strict=True)]
+        # Nothing matched (e.g. "summarize this"): the beginning of the PDF
+        doc_hits = _merge(doc_results, DOCUMENT_CHUNKS) or document.first(DOCUMENT_CHUNKS)
+        return doc_hits + kb_hits
 
-    async def _prepare(self, question: str, history: Optional[History]) -> tuple[list, list[dict]]:
+    async def _prepare(self, question: str, history: Optional[History],
+                       document: Optional[DocumentIndex] = None) -> tuple[list, list[dict]]:
         history = (history or [])[-MAX_HISTORY_TURNS:]
         language = detect_language(question)
         search_query = await self._english_query(question, language)
-        hits = await self._retrieve(question, history, search_query)
+        hits = await self._retrieve(question, history, search_query, document)
 
         context = "\n\n".join(f"[{i}] ({_origin(h)})\n{h['text']}" for i, h in enumerate(hits, 1)) \
             or "(no matching information found)"
@@ -167,17 +191,20 @@ class RAGService:
         ))
         return messages, hits
 
-    async def answer(self, question: str, history: Optional[History] = None) -> Answer:
-        messages, hits = await self._prepare(question, history)
+    async def answer(self, question: str, history: Optional[History] = None,
+                     document: Optional[DocumentIndex] = None) -> Answer:
+        messages, hits = await self._prepare(question, history, document)
         try:
             response = await self.llm.ainvoke(messages)
         except LLM_ERRORS as e:
             raise _assistant_error(e) from e
         return finalize_answer(response.content, hits)
 
-    async def stream(self, question: str, history: Optional[History] = None) -> AsyncIterator[Union[str, Answer]]:
-        """Yields text pieces as the model writes them, then one final cleaned-up Answer."""
-        messages, hits = await self._prepare(question, history)
+    async def stream(self, question: str, history: Optional[History] = None,
+                     document: Optional[DocumentIndex] = None) -> AsyncIterator[Union[str, Answer]]:
+        """Yields text pieces as the model writes them, then one final cleaned-up Answer.
+        `document`: the chat's uploaded PDF, searched together with the knowledge base."""
+        messages, hits = await self._prepare(question, history, document)
         parts = []
         try:
             async for chunk in self.llm.astream(messages):
@@ -187,6 +214,15 @@ class RAGService:
         except LLM_ERRORS as e:
             raise _assistant_error(e) from e
         yield finalize_answer("".join(parts), hits)
+
+
+def _merge(results: list[list[dict]], k: int) -> list[dict]:
+    """Merge several searches: each chunk once (with its best score), best first."""
+    best: dict[str, dict] = {}
+    for hit in (h for hits in results for h in hits):
+        if hit["id"] not in best or hit["score"] > best[hit["id"]]["score"]:
+            best[hit["id"]] = hit
+    return sorted(best.values(), key=lambda h: h["score"], reverse=True)[:k]
 
 
 def finalize_answer(raw: str, hits: list[dict]) -> Answer:
@@ -216,39 +252,53 @@ def finalize_answer(raw: str, hits: list[dict]) -> Answer:
         if hit and key not in seen:
             seen.add(key)
             sources.append({"title": hit["title"], "url": hit["url"]})
-    if not sources:
+    # Guessing website sources from facts isn't done in a chat about an uploaded PDF: there the facts
+    # usually come from the PDF, and a website page that happens to share a name or time would mislead
+    if not sources and not any(h.get("kind") == "upload" for h in hits):
         sources = _infer_sources(text, hits)
-    return Answer(text=text, sources=sources)
+    return Answer(text=text, sources=sources + _document_sources(text, hits))
 
 
-def _infer_sources(text: str, hits: list[dict]) -> list[dict]:
-    """When the model cited no page: the best-ranked website pages that really contain a fact from the
-    answer (a bold name/term or a 3+ digit number like a fee). Names and numbers stay in English in every
-    language, so this also works for Hindi / Marathi / Hinglish answers."""
-    def norm(s: str) -> str:  # lower-case, no thousands separators, any kind of space -> " "
-        return " ".join(s.lower().replace(",", "").split())
+def _norm(s: str) -> str:  # lower-case, no thousands separators, any kind of space -> " "
+    return " ".join(s.lower().replace(",", "").split())
 
-    facts = {norm(b) for b in BOLD_RE.findall(text)} | {n.replace(",", "") for n in NUMBER_RE.findall(text)}
-    facts = {f for f in facts if len(f) >= 3}
-    if not facts:
-        return []
 
-    def found(fact: str, page_text: str) -> bool:
+def _answer_facts(text: str) -> set[str]:
+    """Facts in an answer that can be checked against the retrieved chunks: bold names/terms and 3+ digit
+    numbers (like a fee). Names and numbers stay in English in every language, so this also works for
+    Hindi / Marathi / Hinglish answers."""
+    numbers = {n.replace(",", "") for n in NUMBER_RE.findall(text)}
+    numbers = {n for n in numbers if not YEAR_RE.fullmatch(n)}  # a year alone matches almost every page
+    facts = {_norm(b) for b in BOLD_RE.findall(text)} | numbers | set(CLOCK_OR_DATE_RE.findall(text))
+    return {f for f in facts if len(f) >= 3}
+
+
+def _contains_fact(facts: set[str], chunk_text: str) -> bool:
+    chunk_text = _norm(chunk_text)
+
+    def found(fact: str) -> bool:
         if fact.isdigit():  # a whole number, not part of a longer one ("999" must not match "138999")
-            return re.search(rf"(?<!\d){fact}(?!\d)", page_text) is not None
-        if fact in page_text:
+            return re.search(rf"(?<!\d){fact}(?!\d)", chunk_text) is not None
+        if fact in chunk_text:
             return True
         # "Dr. Shivshankar S Kore" vs "Dr. Shivshankar S. Kore": all longer words present is enough
         words = [w.strip(".") for w in fact.split() if len(w.strip(".")) >= 3]
-        return len(words) >= 2 and all(w in page_text for w in words)
+        return len(words) >= 2 and all(w in chunk_text for w in words)
 
+    return any(found(f) for f in facts)
+
+
+def _infer_sources(text: str, hits: list[dict]) -> list[dict]:
+    """When the model cited no page: the best-ranked website pages that really contain a fact from the answer."""
+    facts = _answer_facts(text)
+    if not facts:
+        return []
     sources, seen = [], set()
     for hit in hits:  # already sorted best first
         url = hit.get("url")
         if not url or url in seen:
             continue
-        page_text = norm(hit["text"])
-        if any(found(f, page_text) for f in facts):
+        if _contains_fact(facts, hit["text"]):
             seen.add(url)
             sources.append({"title": hit["title"], "url": url})
             if len(sources) == MAX_INFERRED_SOURCES:
@@ -256,7 +306,26 @@ def _infer_sources(text: str, hits: list[dict]) -> list[dict]:
     return sources
 
 
+def _document_sources(text: str, hits: list[dict]) -> list[dict]:
+    """Pages of the user's uploaded PDF that contain a fact from the answer (no link: it's their own file)."""
+    facts = _answer_facts(text)
+    if not facts:
+        return []
+    sources, seen = [], set()
+    for hit in hits:
+        if hit.get("kind") != "upload" or hit["page"] in seen:
+            continue
+        if _contains_fact(facts, hit["text"]):
+            seen.add(hit["page"])
+            sources.append({"title": f"{hit['title']} · page {hit['page']}", "url": ""})
+            if len(sources) == MAX_INFERRED_SOURCES:
+                break
+    return sources
+
+
 def _origin(hit: dict) -> str:
+    if hit.get("kind") == "upload":
+        return f"PDF uploaded by the user: {hit['title']}, page {hit['page']}"
     if hit.get("kind") == "pdf":
         return f"official APSIT website, PDF document: {hit['url']}"
     if hit.get("url"):

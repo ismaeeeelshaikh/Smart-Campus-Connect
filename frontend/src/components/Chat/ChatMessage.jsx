@@ -35,6 +35,18 @@ const SourceChips = ({ sources }) => (
     <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-ink-400">Sources</div>
     <div className="flex flex-wrap gap-2">
       {sources.map((s) => {
+        if (!s.url) {
+          // A page of the user's own uploaded PDF: nothing to link to
+          return (
+            <span
+              key={s.title}
+              className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-gold-200 bg-gold-50 px-2.5 py-1 text-xs font-medium text-gold-800"
+            >
+              <FileText className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{s.title}</span>
+            </span>
+          );
+        }
         const isPdf = /\.pdf$/i.test(s.url);
         const Icon = isPdf ? FileText : ExternalLink;
         return (

@@ -130,10 +130,10 @@ class KnowledgeBase:
         self._index = (chunks, _KeywordIndex(list(chunks), [doc for doc, _ in chunks.values()]))
 
     # ---- embeddings ----
-    def _embed_documents(self, texts: list[str]) -> list[list[float]]:
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
         return self.model.encode(texts, normalize_embeddings=True, batch_size=8).tolist()
 
-    def _embed_query(self, text: str) -> list[float]:
+    def embed_query(self, text: str) -> list[float]:
         return self.model.encode(BGE_QUERY_PREFIX + text, normalize_embeddings=True).tolist()
 
     # ---- writing ----
@@ -150,7 +150,7 @@ class KnowledgeBase:
             self.collection.add(
                 ids=[f"{source}#{i}" for i in range(len(chunks))],
                 documents=chunks,
-                embeddings=self._embed_documents(chunks),
+                embeddings=self.embed_documents(chunks),
                 metadatas=[
                     {"source": source, "title": title, "url": url, "kind": kind,
                      "content_hash": content_hash, "chunk": i}
@@ -191,7 +191,7 @@ class KnowledgeBase:
         if total == 0:
             return []
         n = min(k * 2, total)
-        vector = self.collection.query(query_embeddings=[self._embed_query(query)], n_results=n, include=[])
+        vector = self.collection.query(query_embeddings=[self.embed_query(query)], n_results=n, include=[])
         rankings = [vector["ids"][0], keyword.search(query, n)]
 
         fused: dict[str, float] = {}

@@ -84,10 +84,10 @@ async def test_ai_failures_give_friendly_messages(client, auth_headers):
     from app.services.rag import AssistantBusy, AssistantUnavailable, set_rag_service
 
     class Broken:
-        async def answer(self, question, history=None):
+        async def answer(self, question, history=None, document=None):
             raise RuntimeError("LLM exploded")
 
-        async def stream(self, question, history=None):
+        async def stream(self, question, history=None, document=None):
             raise RuntimeError("LLM exploded")
             yield  # makes this an async generator
 
@@ -95,10 +95,10 @@ async def test_ai_failures_give_friendly_messages(client, auth_headers):
         def __init__(self, error):
             self.error = error
 
-        async def answer(self, question, history=None):
+        async def answer(self, question, history=None, document=None):
             raise self.error()
 
-        async def stream(self, question, history=None):
+        async def stream(self, question, history=None, document=None):
             raise self.error()
             yield
 

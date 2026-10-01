@@ -6,6 +6,10 @@ import { apiErrorMessage } from '../services/validation';
 let nextId = 0;
 const uid = () => `m${Date.now()}-${nextId++}`;
 
+export const MAX_PDF_MB = 10; // same limit as the backend (UPLOAD_MAX_MB)
+
+const byNewest = (list) => [...list].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+
 const toMessages = (sessionDetail) =>
   sessionDetail.messages.flatMap((msg) => [
     { id: `q${msg.id}`, type: 'user', content: msg.question, timestamp: msg.timestamp },
@@ -22,7 +26,10 @@ export const useChatSessions = () => {
   const [error, setError] = useState(null);
   const [failedQuestion, setFailedQuestion] = useState(null); // for "Try again"
   const [isNewChat, setIsNewChat] = useState(true); // a fresh chat isn't saved until the first answer
+  const [pdf, setPdf] = useState(null); // the current chat's uploaded PDF: {filename, pages}
+  const [uploadingPdf, setUploadingPdf] = useState(null); // file name while a PDF is being read
   const abortRef = useRef(null);
+  const viewRef = useRef(0); // changes whenever another chat is opened (to ignore late upload results)
 
   const stopStreaming = () => {
     abortRef.current?.abort();
@@ -31,8 +38,10 @@ export const useChatSessions = () => {
 
   const startNewChat = () => {
     stopStreaming();
+    viewRef.current += 1;
     setCurrentSession(null);
     setCurrentMessages([]);
+    setPdf(null);
     setIsNewChat(true);
     setError(null);
     setFailedQuestion(null);
@@ -41,6 +50,7 @@ export const useChatSessions = () => {
 
   const loadSession = async (sessionId) => {
     stopStreaming();
+    viewRef.current += 1;
     setLoading(false);
     setLoadingSession(true);
     setError(null);
@@ -49,6 +59,7 @@ export const useChatSessions = () => {
       const response = await chatSessionAPI.getSession(sessionId);
       setCurrentSession(response.data);
       setCurrentMessages(toMessages(response.data));
+      setPdf(response.data.document || null);
       setIsNewChat(false);
     } catch (err) {
       setError(apiErrorMessage(err, 'Could not open this chat.'));
@@ -85,12 +96,11 @@ export const useChatSessions = () => {
         const done = await streamChat(`/chat-sessions/${sessionId}/messages/stream`, { question: text }, { onToken, signal: controller.signal });
         updateAi((m) => ({ ...m, content: done.message.answer, sources: done.message.sources, streaming: false, timestamp: done.message.timestamp }));
         // Move this chat to the top of the list
-        setSessions((prev) => {
-          const updated = prev.map((s) =>
+        setSessions((prev) =>
+          byNewest(prev.map((s) =>
             s.id === sessionId ? { ...s, updated_at: new Date().toISOString(), message_count: (s.message_count || 0) + 1 } : s
-          );
-          return updated.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
-        });
+          ))
+        );
       }
     } catch (err) {
       if (err.name === 'AbortError') return; // user switched chats
@@ -102,6 +112,64 @@ export const useChatSessions = () => {
         abortRef.current = null;
         setLoading(false);
       }
+    }
+  };
+
+  // Attach a PDF: to the open chat, or (on the welcome screen) to a new chat named after the file
+  const uploadPdf = async (file) => {
+    if (uploadingPdf || loading) return;
+    if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') {
+      setError('Please choose a PDF file.');
+      return;
+    }
+    if (file.size > MAX_PDF_MB * 1024 * 1024) {
+      setError(`The PDF is too large. The limit is ${MAX_PDF_MB} MB.`);
+      return;
+    }
+    const view = viewRef.current;
+    setError(null);
+    setFailedQuestion(null);
+    setUploadingPdf(file.name);
+    try {
+      if (isNewChat || !currentSession) {
+        const { data } = await chatSessionAPI.startWithPdf(file);
+        setSessions((prev) => [data.session, ...prev.filter((s) => s.id !== data.session.id)]);
+        if (viewRef.current !== view) return; // the user opened another chat meanwhile
+        setCurrentSession(data.session);
+        setCurrentMessages([]);
+        setIsNewChat(false);
+        setPdf(data.document);
+      } else {
+        const sessionId = currentSession.id;
+        const { data } = await chatSessionAPI.uploadPdf(sessionId, file);
+        setSessions((prev) =>
+          byNewest(prev.map((s) => (s.id === sessionId ? { ...s, has_document: true, updated_at: new Date().toISOString() } : s)))
+        );
+        if (viewRef.current === view) setPdf(data);
+      }
+    } catch (err) {
+      if (viewRef.current === view) setError(apiErrorMessage(err, 'Could not read the PDF. Please try again.'));
+    } finally {
+      setUploadingPdf(null);
+    }
+  };
+
+  const removePdf = async () => {
+    if (!currentSession || !pdf) return;
+    const sessionId = currentSession.id;
+    try {
+      await chatSessionAPI.removePdf(sessionId);
+      setPdf(null);
+      if (currentMessages.length === 0) {
+        // Nothing else was in this chat: remove it too
+        await chatSessionAPI.deleteSession(sessionId).catch(() => {});
+        setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+        startNewChat();
+      } else {
+        setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, has_document: false } : s)));
+      }
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Could not remove the PDF.'));
     }
   };
 
@@ -149,9 +217,13 @@ export const useChatSessions = () => {
     error,
     failedQuestion,
     isNewChat,
+    pdf,
+    uploadingPdf,
     startNewChat,
     loadSession,
     sendMessage,
+    uploadPdf,
+    removePdf,
     updateSessionTitle,
     deleteSession,
     dismissError: () => {

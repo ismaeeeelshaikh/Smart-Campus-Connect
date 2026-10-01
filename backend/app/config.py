@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     chroma_dir: str = "chroma_db"
     embedding_model: str = "BAAI/bge-base-en-v1.5"
 
+    # PDFs students upload to a chat (only text PDFs; scanned images have no text to read)
+    upload_max_mb: int = 10
+    upload_max_pages: int = 100
+
     # Website sync (https://www.apsit.edu.in). 0 hours = no automatic sync (admins can still start one).
     crawl_interval_hours: float = 6
     crawl_max_pages: int = 2000

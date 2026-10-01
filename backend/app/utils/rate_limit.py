@@ -1,6 +1,6 @@
-"""Small in-memory rate limiter for login, OTP and password-reset endpoints.
+"""Small in-memory rate limiter for login, OTP, password-reset and PDF-upload endpoints.
 
-Chat is intentionally NOT limited (decision 2026-10-01). Limits live in this process's memory,
+Chat questions are intentionally NOT limited (decision 2026-10-01). Limits live in this process's memory,
 so they reset on restart and aren't shared between several worker processes (fine for one
 backend process; use Redis if you ever run several).
 """
@@ -23,6 +23,7 @@ LIMITS = {
     "reset_request:ip": (10, 60 * 60),
     "reset_request:email": (3, 15 * 60),
     "reset_password:email": (10, 15 * 60),
+    "pdf_upload:user": (20, 60 * 60),  # reading + embedding a PDF uses the server's CPU
 }
 
 

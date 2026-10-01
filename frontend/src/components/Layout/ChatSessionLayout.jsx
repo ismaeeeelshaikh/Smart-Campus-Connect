@@ -47,7 +47,7 @@ const ChatSessionLayout = () => {
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <Header title={chat.isNewChat ? 'New chat' : chat.currentSession?.title} onMenu={() => setSidebarOpen(true)} />
+        <Header title={chat.isNewChat ? 'New chat' : chat.currentSession?.title} onMenu={() => setSidebarOpen(true)} hasPdf={Boolean(chat.pdf)} />
         <ChatInterface
           messages={chat.currentMessages}
           onSendMessage={chat.sendMessage}
@@ -57,6 +57,10 @@ const ChatSessionLayout = () => {
           failedQuestion={chat.failedQuestion}
           onDismissError={chat.dismissError}
           greeting={firstName ? `Hi ${firstName}, ask anything about APSIT` : 'Ask anything about APSIT'}
+          pdf={chat.pdf}
+          uploadingPdf={chat.uploadingPdf}
+          onUploadPdf={chat.uploadPdf}
+          onRemovePdf={chat.removePdf}
         />
       </div>
     </div>

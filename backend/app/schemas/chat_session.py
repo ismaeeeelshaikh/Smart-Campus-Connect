@@ -21,6 +21,14 @@ class ChatMessageResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+class DocumentInfo(BaseModel):
+    """A PDF uploaded to a chat."""
+    filename: str
+    pages: int
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
 class ChatSessionCreate(BaseModel):
     title: Optional[str] = "New Chat"
 
@@ -30,6 +38,7 @@ class ChatSessionResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     message_count: Optional[int] = 0
+    has_document: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -39,8 +48,13 @@ class ChatSessionDetail(BaseModel):
     created_at: datetime
     updated_at: datetime
     messages: List[ChatMessageResponse]
+    document: Optional[DocumentInfo] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+class DocumentUploadResponse(BaseModel):
+    session: ChatSessionResponse
+    document: DocumentInfo
 
 class ChatSessionList(BaseModel):
     sessions: List[ChatSessionResponse]

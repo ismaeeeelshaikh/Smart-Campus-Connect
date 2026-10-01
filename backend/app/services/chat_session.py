@@ -1,12 +1,14 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, func
+from sqlalchemy import select, desc, func, or_
 from sqlalchemy.orm import selectinload
 from ..database import async_session
+from ..models.chat_document import ChatDocument
 from ..models.chat_session import ChatSession, ChatMessage
-from ..schemas.chat_session import ChatSessionResponse, ChatSessionDetail, ChatMessageResponse
+from ..schemas.chat_session import ChatSessionResponse, ChatSessionDetail, ChatMessageResponse, DocumentInfo
 from ..utils.sse import sse
+from .documents import DocumentIndex, load_index, remove_document, save_document, start_indexing
 from .rag import Answer, AssistantBusy, get_rag_service, History, MAX_HISTORY_TURNS
-from typing import AsyncIterator, List
+from typing import AsyncIterator, List, Optional
 import logging
 import re
 
@@ -23,13 +25,14 @@ def _message_response(message: ChatMessage) -> ChatMessageResponse:
     )
 
 
-def _session_response(session: ChatSession, message_count: int) -> ChatSessionResponse:
+def _session_response(session: ChatSession, message_count: int, has_document: bool = False) -> ChatSessionResponse:
     return ChatSessionResponse(
         id=session.id,
         title=session.title,
         created_at=session.created_at,
         updated_at=session.updated_at,
         message_count=message_count,
+        has_document=has_document,
     )
 
 
@@ -116,17 +119,25 @@ class ChatSessionService:
 
     # ---- follow-up messages ----
     @staticmethod
-    async def get_history_for_message(session_id: int, user_id: int, db: AsyncSession) -> History:
-        """Check the session belongs to the user and return its recent history. Raises ValueError."""
+    async def _owned_session(session_id: int, user_id: int, db: AsyncSession) -> ChatSession:
+        """The session if it belongs to the user. Raises ValueError otherwise."""
         session = (await db.execute(
             select(ChatSession).filter(ChatSession.id == session_id, ChatSession.user_id == user_id)
         )).scalar_one_or_none()
         if not session:
             raise ValueError("Chat session not found")
+        return session
+
+    @staticmethod
+    async def get_history_for_message(session_id: int, user_id: int, db: AsyncSession) -> tuple[History, Optional[DocumentIndex]]:
+        """Check the session belongs to the user; return its recent history and its uploaded PDF
+        (or None). Raises ValueError."""
+        await ChatSessionService._owned_session(session_id, user_id, db)
         history = await ChatSessionService._recent_history(session_id, db)
+        document = await load_index(db, session_id)
         # End the read transaction before the slow LLM call, so the DB connection isn't held
         await db.commit()
-        return history
+        return history, document
 
     @staticmethod
     async def _save_message(session_id: int, user_id: int, question: str, answer: Answer, db: AsyncSession) -> ChatMessageResponse:
@@ -142,16 +153,17 @@ class ChatSessionService:
 
     @staticmethod
     async def add_message_to_session(session_id: int, user_id: int, question: str, db: AsyncSession) -> ChatMessageResponse:
-        history = await ChatSessionService.get_history_for_message(session_id, user_id, db)
-        answer = await get_rag_service().answer(question, history)
+        history, document = await ChatSessionService.get_history_for_message(session_id, user_id, db)
+        answer = await get_rag_service().answer(question, history, document=document)
         return await ChatSessionService._save_message(session_id, user_id, question, answer, db)
 
     @staticmethod
-    async def stream_message(session_id: int, user_id: int, question: str, history: History) -> AsyncIterator[str]:
-        """Streams a follow-up answer (history already checked by get_history_for_message)."""
+    async def stream_message(session_id: int, user_id: int, question: str, history: History,
+                             document: Optional[DocumentIndex] = None) -> AsyncIterator[str]:
+        """Streams a follow-up answer (history and PDF already loaded by get_history_for_message)."""
         try:
             answer = None
-            async for piece in get_rag_service().stream(question, history):
+            async for piece in get_rag_service().stream(question, history, document=document):
                 if isinstance(piece, Answer):
                     answer = piece
                 else:
@@ -165,25 +177,58 @@ class ChatSessionService:
             logger.exception("Streaming a follow-up message failed")
             yield sse("error", {"detail": "Could not answer right now. Please try again."})
 
+    # ---- uploaded PDFs ----
+    @staticmethod
+    async def create_session_with_document(user_id: int, filename: str, data: bytes, db: AsyncSession) -> tuple[ChatSessionResponse, DocumentInfo]:
+        """A new chat named after the PDF, with the PDF attached. Raises DocumentError."""
+        title = filename if len(filename) <= 40 else filename[:37] + "..."
+        chat_session = ChatSession(user_id=user_id, title=title)
+        db.add(chat_session)
+        await db.flush()
+        document = await save_document(db, chat_session.id, filename, data)
+        await db.commit()
+        start_indexing(document.id, get_rag_service().kb)
+        await db.refresh(chat_session)
+        return _session_response(chat_session, 0, has_document=True), DocumentInfo.model_validate(document)
+
+    @staticmethod
+    async def attach_document(session_id: int, user_id: int, filename: str, data: bytes, db: AsyncSession) -> DocumentInfo:
+        """Attach a PDF to an existing chat, replacing its earlier one. Raises ValueError / DocumentError."""
+        session = await ChatSessionService._owned_session(session_id, user_id, db)
+        document = await save_document(db, session_id, filename, data)
+        session.updated_at = func.now()
+        await db.commit()
+        start_indexing(document.id, get_rag_service().kb)
+        return DocumentInfo.model_validate(document)
+
+    @staticmethod
+    async def delete_document(session_id: int, user_id: int, db: AsyncSession) -> bool:
+        """Remove the chat's PDF. False if it had none. Raises ValueError."""
+        await ChatSessionService._owned_session(session_id, user_id, db)
+        removed = await remove_document(db, session_id)
+        await db.commit()
+        return removed
+
     # ---- listing, rename, delete ----
     @staticmethod
     async def get_user_chat_sessions(user_id: int, db: AsyncSession) -> List[ChatSessionResponse]:
-        # Only sessions that have messages, newest activity first
+        # Only sessions that have messages or a PDF, newest activity first
+        has_document = select(ChatDocument.id).where(ChatDocument.chat_session_id == ChatSession.id).exists()
         result = await db.execute(
-            select(ChatSession, func.count(ChatMessage.id).label('message_count'))
+            select(ChatSession, func.count(ChatMessage.id).label('message_count'), has_document.label('has_document'))
             .outerjoin(ChatMessage)
             .filter(ChatSession.user_id == user_id)
             .group_by(ChatSession.id)
-            .having(func.count(ChatMessage.id) > 0)
+            .having(or_(func.count(ChatMessage.id) > 0, has_document))
             .order_by(desc(ChatSession.updated_at))
         )
-        return [_session_response(session, count or 0) for session, count in result.all()]
+        return [_session_response(session, count or 0, bool(doc)) for session, count, doc in result.all()]
 
     @staticmethod
     async def get_chat_session_detail(session_id: int, user_id: int, db: AsyncSession) -> ChatSessionDetail:
         session = (await db.execute(
             select(ChatSession)
-            .options(selectinload(ChatSession.messages))
+            .options(selectinload(ChatSession.messages), selectinload(ChatSession.document))
             .filter(ChatSession.id == session_id, ChatSession.user_id == user_id)
         )).scalar_one_or_none()
         if not session:
@@ -194,6 +239,7 @@ class ChatSessionService:
             created_at=session.created_at,
             updated_at=session.updated_at,
             messages=[_message_response(m) for m in sorted(session.messages, key=lambda x: (x.timestamp, x.id))],
+            document=DocumentInfo.model_validate(session.document) if session.document else None,
         )
 
     @staticmethod

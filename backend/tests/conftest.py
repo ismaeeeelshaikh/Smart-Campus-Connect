@@ -79,7 +79,7 @@ _migrate()
 
 from helpers import FakeRag  # noqa: E402
 
-TABLES = "users, chat_sessions, chat_messages, signup_otp_tokens, password_reset_tokens, crawled_pages, crawl_runs"
+TABLES = "users, chat_sessions, chat_messages, chat_documents, chat_document_chunks, signup_otp_tokens, password_reset_tokens, crawled_pages, crawl_runs"
 
 
 @pytest.fixture(scope="session")
@@ -135,6 +135,14 @@ def outbox(monkeypatch):
     monkeypatch.setattr(auth_router, "send_otp_email", capture)
     monkeypatch.setattr(reset_router, "send_reset_email", capture)
     return sent
+
+
+@pytest.fixture(autouse=True)
+async def finish_pdf_indexing():
+    """Let background PDF indexing finish before the next test empties the tables."""
+    yield
+    from app.services.documents import wait_for_indexing
+    await wait_for_indexing()
 
 
 @pytest.fixture(autouse=True)

@@ -21,6 +21,10 @@ export const apiErrorMessage = (err, fallback) => {
   }
   const detail = err.response?.data?.detail;
   if (typeof detail === 'string') return detail;
+  // A server error without our JSON message: the backend is down or restarting (proxy error)
+  if (err.response?.status >= 500) {
+    return "The server isn't responding right now. Please try again in a minute.";
+  }
   if (Array.isArray(detail) && detail[0]?.msg) return detail[0].msg.replace(/^Value error, /, '');
   return fallback;
 };

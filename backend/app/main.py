@@ -3,9 +3,10 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from .config import settings
 from .routers import admin, auth, chat_sessions, guest, health, password_reset
-from .services import website_sync
+from .services import documents, website_sync
 from .services.rag import init_rag_service
 
 # Configure logging once for the whole app (modules only call logging.getLogger)
@@ -15,8 +16,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Loading the embedding model is slow and blocking, so do it in a thread
-    await asyncio.to_thread(init_rag_service)
+    rag = await asyncio.to_thread(init_rag_service)
     await website_sync.mark_interrupted_runs()
+    await documents.resume_indexing(rag.kb)  # PDFs whose indexing a restart cut off
     scheduler = asyncio.create_task(website_sync.schedule_loop())
     yield
     scheduler.cancel()
@@ -32,6 +34,18 @@ app = FastAPI(
     redoc_url="/redoc" if settings.enable_docs else None,
     openapi_url="/openapi.json" if settings.enable_docs else None,
 )
+
+
+MAX_REQUEST_BYTES = (settings.upload_max_mb + 1) * 1024 * 1024
+
+
+@app.middleware("http")
+async def limit_request_size(request, call_next):
+    # Checked before the body is read, so a huge upload isn't stored first (uploads are the only big requests)
+    length = request.headers.get("content-length")
+    if length and length.isdigit() and int(length) > MAX_REQUEST_BYTES:
+        return JSONResponse(status_code=413, content={"detail": f"The file is too large. The limit is {settings.upload_max_mb} MB."})
+    return await call_next(request)
 
 
 @app.middleware("http")

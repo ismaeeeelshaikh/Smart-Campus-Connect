@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, LogOut, MessageSquareText, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { Check, FileText, LogOut, MessageSquareText, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { Wordmark } from '../Brand/Brand';
 import { authAPI } from '../../services/api';
 import { FULL_NAME_RULE, apiErrorMessage, displayName, isValidFullName, normalizeName } from '../../services/validation';
@@ -52,6 +52,8 @@ const SessionItem = ({ session, active, onSelect, onRename, onDelete }) => {
     );
   }
 
+  const Icon = session.has_document ? FileText : MessageSquareText; // chats about an uploaded PDF
+
   return (
     <div
       className={`group relative flex cursor-pointer items-start gap-2.5 rounded-xl px-3 py-2.5 transition ${
@@ -64,7 +66,7 @@ const SessionItem = ({ session, active, onSelect, onRename, onDelete }) => {
       aria-current={active ? 'true' : undefined}
     >
       {active && <span className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-gold-500" />}
-      <MessageSquareText className={`mt-0.5 h-4 w-4 shrink-0 ${active ? 'text-teal-700' : 'text-ink-300'}`} />
+      <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${active ? 'text-teal-700' : 'text-ink-300'}`} />
       <div className="min-w-0 flex-1">
         <div className={`truncate text-sm ${active ? 'font-semibold text-teal-900' : 'text-ink-700'}`}>{session.title}</div>
         <div className="mt-0.5 text-[11px] text-ink-400">{relativeTime(session.updated_at)}</div>
