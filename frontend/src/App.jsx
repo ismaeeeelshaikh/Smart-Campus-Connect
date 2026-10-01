@@ -7,6 +7,7 @@ import Register from './components/Auth/Register';
 import ForgotPassword from "./components/Auth/ForgotPassword";
 import ResetPassword from "./components/Auth/ResetPassword";
 import VerifySignupOtp from "./components/Auth/VerifySignupOtp";
+import GuestChat from "./components/Guest/GuestChat";
 
 
 const PrivateRoute = ({ children }) => {
@@ -37,6 +38,8 @@ function App() {
              <Route path="/forgot-password" element={<ForgotPassword />} />
              <Route path="/reset-password" element={<ResetPassword />} />
              <Route path="/verify-signup-otp" element={<VerifySignupOtp />} />
+             {/* Public: for visitors without an APSIT email */}
+             <Route path="/guest" element={<GuestChat />} />
 
             <Route
               path="/"

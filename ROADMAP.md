@@ -9,7 +9,7 @@ Tick each box as it's done.
 | 0 | Stop the credential leak | Urgent. Anyone on GitHub can use the leaked password right now |
 | 1 | Clean repo + reproducible setup | Every later change needs a project that installs and runs from scratch |
 | 2 | Fix broken features | Signup and some endpoints are broken today |
-| 3 | Fix the RAG core + guest mode | Needed before adding live data, or the crawler has nowhere good to put it. Guest mode needs the new history handling. |
+| 3 ✅ | Fix the RAG core + guest mode | Needed before adding live data, or the crawler has nowhere good to put it. Guest mode needs the new history handling. |
 | 4 | Live website sync | **Sir's requirement:** changes on apsit.edu.in show up in the chatbot |
 | 5 | Security hardening | Before real students use it |
 | 6 | Frontend polish | Show sources, streaming, remove dead code |
@@ -106,32 +106,52 @@ Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a6
 
 ---
 
-## Phase 3: Fix the RAG core
+## Phase 3: Fix the RAG core + guest mode ✅
 
-- [ ] **3.1 Stop blocking the server.** `rag_service.get_response_for_session` runs synchronous LLM, embedding and search calls inside `async` routes, so one slow answer freezes every user. Use `await llm.ainvoke(...)` / `await asyncio.to_thread(...)`.
-- [ ] **3.2 Don't hold a DB transaction open during the LLM call.** `create_session_with_first_message` does `flush()`, then waits for the LLM, then commits. Get the answer first, then write both rows in one short transaction.
-- [ ] **3.3 Remove the pickle memory** (`conversation_memory.pkl`). It duplicates the `chat_messages` table, is rewritten after every message and grows forever. Load the last 6 messages of the session from the DB instead. Delete `_load/_save_conversation_memory` and `clear_session_memory`.
-- [ ] **3.4 Stop wiping the vector DB on startup.** `_load_or_create_retriever` runs `shutil.rmtree("./chroma_db_final")` and re-embeds everything on every start. Keep Chroma persistent; build or update it with a separate command (`python -m app.scripts.build_index`) and later with the crawler (Phase 4).
-- [ ] **3.5** Replace `ParentDocumentRetriever` + `InMemoryStore`: the in-memory parent store is lost on restart and doesn't match a persistent vector store. Use a plain Chroma retriever with ~1000-character chunks and `source` / `title` / `crawled_at` metadata on every chunk.
-- [ ] **3.6** Create `RAGService` in FastAPI's `lifespan` instead of at import time (`rag_service = RAGService()` at the bottom of `rag.py`). Right now even `alembic` or a test import loads the embedding model.
-- [ ] **3.7 Rewrite the prompt:**
-  - use a proper system message plus the user message
-  - answer only from the provided context; say "I don't know" when the answer isn't there
-  - end each answer with the source link(s)
-  - treat website text as data, not instructions
-  - remove the "web search is the TRUTH" rule
-- [ ] **3.8** Remove the keyword HOD hack (`"it" in q_lower` also matches "institute" and "with") and the DuckDuckGo search. Phase 4 replaces both with real website data.
+- [x] **3.1 The server isn't blocked any more.** The LLM call uses `await llm.ainvoke(...)`, and embedding/search run in `asyncio.to_thread`. *Verified:* two questions sent at once were both answered in ~4.4 s, and `/health` answered in ~0.01 s while they ran.
+- [x] **3.2 No DB transaction is held during the LLM call.** A new chat gets its answer first, then writes the session + message in one short transaction. A follow-up reads its history, ends the read transaction, calls the LLM, then writes.
+- [x] **3.3 Pickle memory removed.** `rag.answer(question, history)` takes the history as a parameter. Logged-in chats load the last 4 Q&A pairs from `chat_messages`, and guests send theirs from the browser. `conversation_memory.pkl` is deleted.
+- [x] **3.4 Persistent knowledge base** (`app/services/knowledge_base.py`, folder `backend/chroma_db/`). Every document has a `source` id and a content hash, and only changed sources are re-embedded. Deleted files are removed from the index. Chroma telemetry is off. `python -m scripts.build_index [--rebuild]` rebuilds by hand. *Verified:* the first full index takes ~4.5 min; a restart with no changes takes **56 s** (was 4–5 min). The remaining time is Python importing torch/transformers on Windows (~35 s): the model loads in 0.7 s and a query embeds in 0.15 s.
+- [x] **3.5 New retrieval:**
+  - chunks of ~1000 characters, split by `=== SECTION ===`, each prefixed with the document title and section name
+  - metadata `source` / `title` / `url` / `kind` on each chunk
+  - **hybrid search:** vector search combined with BM25 keyword search (reciprocal rank fusion), so exact terms like "DTE code", names and abbreviations are found
+  - follow-up questions are searched together with the previous question
+  - `[cite_start]` / `[cite: …]` scraping leftovers are stripped (96 → 72 chunks)
+  - *Verified:* for 12/12 test questions the right chunk ranks first; before, "DTE code" wasn't found
+- [x] **3.6** `RAGService` is created in FastAPI's `lifespan` (`init_rag_service()`), not at import time. Tests replace it with `set_rag_service(stub)`.
+- [x] **3.7 New prompt:**
+  - a system message with rules
+  - answers only from the context, and says so when the information isn't there (tested: "Who is the principal?" → "not in my information, see apsit.edu.in")
+  - the context is treated as data, not instructions
+  - declines off-topic requests
+  - includes official links found in the context
+  - greets only on the first message
+- [x] **3.8** Removed the keyword HOD hack and the DuckDuckGo search, plus `langchain`, `langchain-community`, `duckduckgo_search` and `ddgs` from `requirements.txt`. The code now uses `chromadb` and `sentence-transformers` directly.
 - [x] **3.9** The model name comes from `settings.groq_model` (done in Phase 1; default `openai/gpt-oss-120b`).
-- [ ] **3.10 Guest mode for newcomers.** People without an `@apsit.edu.in` email (future students, parents) can't sign up, so they need a way to ask about APSIT without an account.
-  - **Backend:** a public `POST /guest/chat` endpoint with no login. It takes `{question, history}`, where `history` is the last few Q&A pairs kept by the browser. It uses the same RAG answer function as logged-in chats (after 3.3 that function receives history as a parameter) and saves nothing in the database.
+- [x] **3.10 Guest mode for newcomers.**
+  - **Backend:** `POST /guest/chat` has no login, takes `{question, history}`, uses the same `answer()`, and saves nothing.
   - **Frontend:**
-    - a **"Chat as guest"** button on the login page and a public `/guest` route
-    - the same chat screen, keeping history in React state only (gone when the tab closes)
-    - a small banner: "Guest chat isn't saved. APSIT students can sign in with their college email to keep their chats."
-  - **No question limits** for guests. *(Decision 2026-10-01: Groq credits are handled separately.)*
-  - **Done when:** in a private browser window with no login, a guest can ask about admissions and fees and ask follow-ups, and nothing is written to `chat_sessions` / `chat_messages`.
+    - **"Chat as guest"** on the login page, plus a link under the signup email field
+    - a public `/guest` page with a "Guest" header and a "not saved" banner
+    - history kept in React state only
+  - **No question limits** *(decision 2026-10-01)*. Questions are capped at 4000 characters and only the last 4 history turns are used; that's input validation, not a quota.
+  - *Verified:* guest chats wrote 0 rows to the DB, and guest follow-ups work.
 
-**Done when:** two browser windows can chat at the same time without waiting on each other, a backend restart takes seconds, every answer ends with its source, and guests can chat without an account.
+**Verified on 2026-10-01:**
+- **API:** 36/36 checks passed (Phase 2 checks + history-from-DB + guest mode + 422 cases).
+- **Real AI:**
+  - correct HOD answers for IT and Civil
+  - pronoun follow-ups work ("What is her qualification?" and "How many years of experience does he have?"); before, these got "not available"
+  - DTE code found
+  - no made-up principal name
+  - off-topic request declined
+- **Frontend:** `npm run build` passes.
+
+**Not done yet (moved):**
+- Answers mention official links when the context has them, but *structured* sources (a clickable list under each answer) need page URLs, which the crawler adds in **Phase 4**. The UI for them is **6.1**.
+- The local data is stale: it says the Civil HOD has "36 years, pursuing PhD", while the live site says 17 years, PhD → **Phase 4**.
+- *Optional for deployment:* replacing `sentence-transformers`/PyTorch with an ONNX runtime (e.g. `fastembed`) would cut startup time and ~1.5 GB of dependencies → consider in **Phase 8**.
 
 ---
 
@@ -247,3 +267,4 @@ Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a6
 | 2026-10-01 | Phase 1 | Clean setup: requirements, config, migrations, README; tested end-to-end |
 | 2026-10-01 | Phase 2 | Broken features fixed, college-email-only signup; 28/28 API checks pass |
 | 2026-10-01 | Plan change | Added 3.10 guest mode for newcomers, with no chat limits (Groq credits handled separately) |
+| 2026-10-01 | Phase 3 | Async RAG, persistent hybrid-search index, DB history, new prompt, guest mode; 36/36 API checks pass |

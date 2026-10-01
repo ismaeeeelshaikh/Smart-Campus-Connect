@@ -36,6 +36,11 @@ export const authAPI = {
   login: (userData) => api.post('/auth/login', userData),
 };
 
+// Public chat for visitors without an account; nothing is saved on the server
+export const guestAPI = {
+  chat: (question, history) => api.post('/guest/chat', { question, history }),
+};
+
 export const chatSessionAPI = {
   // Chat session management
   createSession: (title) => api.post('/chat-sessions', { title }),

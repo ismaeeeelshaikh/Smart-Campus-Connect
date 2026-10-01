@@ -1,6 +1,9 @@
 # Smart Campus Connect
 
-An AI chatbot for **A.P. Shah Institute of Technology (APSIT), Thane**. Students sign up with an email OTP, chat in ChatGPT-style sessions, and get answers about admissions, departments, faculty, facilities and placements.
+An AI chatbot for **A.P. Shah Institute of Technology (APSIT), Thane**. It answers questions about admissions, departments, faculty, facilities and placements.
+
+- **APSIT students** sign up with their `@apsit.edu.in` email and an OTP, and get saved ChatGPT-style chats.
+- **Visitors** (future students, parents) can chat as a guest without an account.
 
 - **Backend:** FastAPI, async SQLAlchemy + PostgreSQL, Alembic, JWT auth
 - **AI:** retrieval-augmented generation (LangChain + Chroma + `BAAI/bge-base-en-v1.5` embeddings) with a Groq-hosted LLM
@@ -59,7 +62,7 @@ uvicorn app.main:app --reload
 - API: http://127.0.0.1:8000
 - Interactive API docs: http://127.0.0.1:8000/docs
 
-The first start takes longer because the embedding model is downloaded (~440 MB) and the knowledge base is indexed.
+The first start takes several minutes: the embedding model is downloaded (~440 MB) and the knowledge base is indexed. Later starts take about a minute on Windows, and only changed data files are re-indexed.
 
 ## 2. Frontend
 
@@ -75,9 +78,19 @@ Open http://localhost:5173. The dev server forwards `/api/*` requests to the bac
 
 ## Knowledge base
 
-The chatbot answers from the text files in `backend/college_data/`. The index is rebuilt from these files every time the backend starts, so to change the data: edit or add `.txt` files, then restart the backend.
+The chatbot answers from the text files in `backend/college_data/`, indexed into a vector database stored in `backend/chroma_db/` (git-ignored).
 
-Phase 4 of the roadmap replaces this with an automatic crawler, so changes on apsit.edu.in reach the chatbot without editing files.
+- **To change the data:** edit, add or delete `.txt` files, then restart the backend. At startup only the files whose content changed are re-indexed.
+- **File format:** the first line can be an ALL-CAPS title. `=== SECTION NAME ===` lines split the file into sections; each chunk keeps its title and section name, which helps search.
+- **Rebuild from scratch** (stop the backend first): `python -m scripts.build_index --rebuild`
+
+Search is hybrid. Meaning-based (vector) search is combined with keyword search, so exact terms like "DTE code", names and abbreviations are found too.
+
+Phase 4 of the roadmap adds an automatic crawler, so changes on apsit.edu.in reach the chatbot without editing files.
+
+## Guest mode
+
+Visitors without an `@apsit.edu.in` email (future students, parents) can click **Chat as guest** on the login page (or open `/guest`). They can ask the same questions; guest chats are not saved and disappear when the tab is closed.
 
 ## Database migrations
 
@@ -99,12 +112,12 @@ backend/
     config.py         all settings, loaded from backend/.env
     database.py       async SQLAlchemy engine + session
     models/           database tables
-    routers/          API endpoints (auth, chat sessions, password reset)
-    services/         business logic (auth, OTP, email, RAG)
+    routers/          API endpoints (auth, chat sessions, guest chat, password reset)
+    services/         business logic (auth, OTP, email, knowledge base, RAG)
     schemas/          request/response models
   alembic/            database migrations
   college_data/       knowledge base text files
-  scripts/            check_db.py, check_groq.py
+  scripts/            check_db.py, check_groq.py, build_index.py
 frontend/
   src/
     components/       Auth, Chat, Layout, Sidebar

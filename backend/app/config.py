@@ -1,8 +1,9 @@
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# backend/.env, resolved from this file so it works no matter where you start the app
-ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+# backend/ folder, resolved from this file so paths work no matter where you start the app
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+ENV_FILE = BACKEND_DIR / ".env"
 
 
 class Settings(BaseSettings):
@@ -17,6 +18,11 @@ class Settings(BaseSettings):
     allowed_signup_domains: str = "apsit.edu.in"
     # Comma-separated list of frontend URLs allowed to call the API
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+
+    # Knowledge base (relative paths are inside backend/)
+    college_data_dir: str = "college_data"
+    chroma_dir: str = "chroma_db"
+    embedding_model: str = "BAAI/bge-base-en-v1.5"
 
     MAIL_USERNAME: str
     MAIL_PASSWORD: str
@@ -34,6 +40,10 @@ class Settings(BaseSettings):
             return True
         domains = [d.strip().lower().lstrip("@") for d in self.allowed_signup_domains.split(",") if d.strip()]
         return not domains or email.rsplit("@", 1)[-1] in domains
+
+    def backend_path(self, path: str) -> Path:
+        p = Path(path)
+        return p if p.is_absolute() else BACKEND_DIR / p
 
 
 settings = Settings()

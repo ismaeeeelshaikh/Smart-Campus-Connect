@@ -4,7 +4,7 @@ from sqlalchemy.orm import selectinload
 from ..models.chat_session import ChatSession, ChatMessage
 from ..models.user import User
 from ..schemas.chat_session import ChatSessionResponse, ChatSessionDetail, ChatMessageResponse
-from .rag import rag_service
+from .rag import get_rag_service, History, MAX_HISTORY_TURNS
 from typing import List
 import logging
 import re
@@ -43,6 +43,17 @@ class ChatSessionService:
         return title
 
     @staticmethod
+    async def _recent_history(session_id: int, db: AsyncSession) -> History:
+        """Last few (question, answer) pairs of the session, oldest first."""
+        result = await db.execute(
+            select(ChatMessage.question, ChatMessage.answer)
+            .filter(ChatMessage.chat_session_id == session_id)
+            .order_by(desc(ChatMessage.timestamp), desc(ChatMessage.id))
+            .limit(MAX_HISTORY_TURNS)
+        )
+        return [(q, a) for q, a in reversed(result.all())]
+
+    @staticmethod
     async def create_chat_session(user_id: int, title: str, db: AsyncSession) -> ChatSessionResponse:
         # For ChatGPT-like experience, always create with provided title
         # Don't auto-generate "Chat X" numbers anymore
@@ -69,29 +80,22 @@ class ChatSessionService:
     @staticmethod
     async def create_session_with_first_message(user_id: int, question: str, db: AsyncSession) -> tuple[ChatSessionResponse, ChatMessageResponse]:
         """Create a new session and add the first message - ChatGPT style"""
-        # Generate smart title from the question
-        smart_title = ChatSessionService._generate_smart_title(question)
-        
-        # Create the session
+        # Get the AI answer first, so no DB transaction is held open while waiting for the LLM
+        answer = await get_rag_service().answer(question, history=[])
+
         chat_session = ChatSession(
             user_id=user_id,
-            title=smart_title
+            title=ChatSessionService._generate_smart_title(question)
         )
-        
         db.add(chat_session)
-        await db.flush()  # Get the ID without committing
-        
-        # Get AI response
-        answer = rag_service.get_response_for_session(question, user_id, chat_session.id)
-        
-        # Save the first message
+        await db.flush()  # get the session ID for the message
+
         message = ChatMessage(
             chat_session_id=chat_session.id,
             user_id=user_id,
             question=question,
             answer=answer
         )
-        
         db.add(message)
         await db.commit()
         await db.refresh(chat_session)
@@ -179,10 +183,13 @@ class ChatSessionService:
         session = result.scalar_one_or_none()
         if not session:
             raise ValueError("Chat session not found")
-            
-        # Get AI response using session-specific memory
-        answer = rag_service.get_response_for_session(question, user_id, session_id)
-        
+
+        history = await ChatSessionService._recent_history(session_id, db)
+        # End the read transaction before the slow LLM call, so the DB connection isn't held
+        await db.commit()
+
+        answer = await get_rag_service().answer(question, history)
+
         # Save message
         message = ChatMessage(
             chat_session_id=session_id,
@@ -238,9 +245,6 @@ class ChatSessionService:
         if not session:
             return False
             
-        # Clear session memory from RAG service
-        rag_service.clear_session_memory(user_id, session_id)
-        
         await db.delete(session)
         await db.commit()
         

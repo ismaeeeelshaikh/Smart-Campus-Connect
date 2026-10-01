@@ -143,7 +143,10 @@ const Register = () => {
                 value={formData.email}
                 onChange={handleChange}
               />
-              <p className="mt-1 text-xs text-gray-500">Use your APSIT college email (@apsit.edu.in).</p>
+              <p className="mt-1 text-xs text-gray-500">
+                Use your APSIT college email (@apsit.edu.in). No college email?{' '}
+                <Link to="/guest" className="text-primary-500 hover:underline">Chat as guest</Link>
+              </p>
             </div>
             <div>
               <label htmlFor="password" className="block mb-1 text-gray-400 font-medium">

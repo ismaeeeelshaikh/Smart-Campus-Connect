@@ -102,6 +102,17 @@ const Login = () => {
             </Link>
           </div>
         </form>
+        <div className="border-t border-gray-700 pt-5 text-center">
+          <p className="text-sm text-gray-400 mb-3">
+            Not an APSIT student? Future students and parents can ask questions without an account.
+          </p>
+          <Link
+            to="/guest"
+            className="inline-block w-full py-2 px-4 border border-primary-500 text-primary-500 hover:bg-primary-600 hover:text-white font-semibold rounded-md transition"
+          >
+            Chat as guest
+          </Link>
+        </div>
       </div>
     </div>
   );

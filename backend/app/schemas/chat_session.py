@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import List, Optional
 
 class ChatMessageCreate(BaseModel):
-    question: str
+    question: str = Field(min_length=1, max_length=4000)
 
 class ChatSessionTitleUpdate(BaseModel):
     title: str = Field(min_length=1, max_length=100)

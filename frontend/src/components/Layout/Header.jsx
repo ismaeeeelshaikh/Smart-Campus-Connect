@@ -1,8 +1,10 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { LogOut, User } from 'lucide-react';
+import { LogIn, LogOut, User } from 'lucide-react';
 
-const Header = () => {
+// `guest`: header for the public guest chat (shows "Sign in" instead of the user and "Logout")
+const Header = ({ guest = false }) => {
   const { user, logout } = useAuth();
 
   const handleLogout = () => {
@@ -50,6 +52,18 @@ const Header = () => {
             </h1>
           </div>
 
+          {guest ? (
+            <div className="flex items-center space-x-4">
+              <span className="text-sm text-gray-400">Guest</span>
+              <Link
+                to="/login"
+                className="flex items-center space-x-2 px-3 py-1 text-accent hover:text-white rounded-md hover:bg-primary-600 transition-colors"
+              >
+                <LogIn className="h-4 w-4" />
+                <span className="text-sm">Sign in</span>
+              </Link>
+            </div>
+          ) : (
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2 text-gray-300">
               <User className="h-4 w-4" />
@@ -66,6 +80,7 @@ const Header = () => {
               <span className="text-sm">Logout</span>
             </button>
           </div>
+          )}
         </div>
       </div>
     </header>
