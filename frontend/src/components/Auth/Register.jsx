@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, AtSign, Lock, Mail } from 'lucide-react';
+import { ArrowRight, Lock, Mail, UserRound } from 'lucide-react';
 import { authAPI } from '../../services/api';
-import { PASSWORD_REGEX, PASSWORD_RULE, USERNAME_REGEX, USERNAME_RULE, apiErrorMessage } from '../../services/validation';
+import { FULL_NAME_RULE, PASSWORD_REGEX, PASSWORD_RULE, apiErrorMessage, isValidFullName, normalizeName } from '../../services/validation';
 import AuthLayout from './AuthLayout';
 import { ErrorAlert, PasswordField, Spinner, TextField } from './Fields';
 
 const Register = () => {
-  const [formData, setFormData] = useState({ username: '', email: '', password: '', confirmPassword: '' });
+  const [formData, setFormData] = useState({ fullName: '', email: '', password: '', confirmPassword: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -21,10 +21,10 @@ const Register = () => {
     e.preventDefault();
     if (loading) return;
     const email = formData.email.trim().toLowerCase();
-    const username = formData.username.trim();
+    const fullName = normalizeName(formData.fullName);
 
     // Same rules as the backend (app/utils/security.py)
-    if (!USERNAME_REGEX.test(username)) return setError(USERNAME_RULE);
+    if (!isValidFullName(fullName)) return setError(FULL_NAME_RULE);
     if (!PASSWORD_REGEX.test(formData.password)) return setError(PASSWORD_RULE);
     if (formData.password !== formData.confirmPassword) return setError('Passwords do not match.');
 
@@ -32,7 +32,7 @@ const Register = () => {
     setError('');
     try {
       await authAPI.requestSignupOtp(email);
-      navigate('/verify-signup-otp', { state: { username, email, password: formData.password } });
+      navigate('/verify-signup-otp', { state: { fullName, email, password: formData.password } });
     } catch (err) {
       // e.g. "Please sign up with your college email (@apsit.edu.in)."
       setError(apiErrorMessage(err, 'Could not send the OTP. Please try again.'));
@@ -59,9 +59,9 @@ const Register = () => {
       <form className="space-y-5" onSubmit={handleSubmit} noValidate>
         <ErrorAlert>{error}</ErrorAlert>
         <TextField
-          id="username" name="username" required autoComplete="username" icon={AtSign}
-          label="Username" placeholder="e.g. rohan_s" hint="3-30 characters: letters, numbers, . _ -"
-          value={formData.username} onChange={handleChange} disabled={loading}
+          id="fullName" name="fullName" required autoComplete="name" icon={UserRound}
+          label="Full name" placeholder="e.g. Rohan Sawant" hint="Shown in the app, e.g. in the greeting"
+          value={formData.fullName} onChange={handleChange} disabled={loading}
         />
         <TextField
           id="email" name="email" type="email" required autoComplete="email" icon={Mail}

@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from ..schemas.chat_session import SourceLink
-from ..services.rag import Answer, get_rag_service, MAX_HISTORY_TURNS
+from ..services.rag import Answer, AssistantBusy, get_rag_service, MAX_HISTORY_TURNS
 from ..utils.sse import sse, sse_response
 import logging
 
@@ -34,6 +34,8 @@ class GuestChatResponse(BaseModel):
 async def guest_chat(payload: GuestChatRequest):
     try:
         answer = await get_rag_service().answer(payload.question.strip(), payload.history_pairs())
+    except AssistantBusy:
+        raise HTTPException(status_code=503, detail=AssistantBusy.USER_MESSAGE)
     except Exception:
         logger.exception("Guest chat failed")
         raise HTTPException(status_code=500, detail="Could not answer right now. Please try again.")
@@ -50,6 +52,8 @@ async def guest_chat_stream(payload: GuestChatRequest):
                     yield sse("done", {"answer": piece.text, "sources": piece.sources})
                 else:
                     yield sse("token", {"text": piece})
+        except AssistantBusy:
+            yield sse("error", {"detail": AssistantBusy.USER_MESSAGE})
         except Exception:
             logger.exception("Guest chat stream failed")
             yield sse("error", {"detail": "Could not answer right now. Please try again."})

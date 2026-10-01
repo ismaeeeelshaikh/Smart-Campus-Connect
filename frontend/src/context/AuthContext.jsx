@@ -44,7 +44,7 @@ export const AuthProvider = ({ children }) => {
       const response = await authAPI.login(userData);
       const { access_token, user: userInfo } = response.data;
 
-      // The backend returns the real user record ({ id, username, email }) with the token
+      // The backend returns the user record ({ id, full_name, email, is_admin }) with the token
       localStorage.setItem('token', access_token);
       localStorage.setItem('user', JSON.stringify(userInfo));
       
@@ -65,12 +65,19 @@ export const AuthProvider = ({ children }) => {
     setIsAuthenticated(false);
   };
 
+  // After the profile changes on the server (e.g. a new full name)
+  const updateUser = (userInfo) => {
+    localStorage.setItem('user', JSON.stringify(userInfo));
+    setUser(userInfo);
+  };
+
   const value = {
     isAuthenticated,
     user,
     loading,
     login,
     logout,
+    updateUser,
   };
 
   return (

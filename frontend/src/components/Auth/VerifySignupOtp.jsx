@@ -10,12 +10,12 @@ const VerifySignupOtp = () => {
   const location = useLocation();
   const navigate = useNavigate();
   // Details passed from Register.jsx
-  const { username, email, password } = location.state || {};
+  const { fullName, email, password } = location.state || {};
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  if (!username || !email || !password) {
+  if (!fullName || !email || !password) {
     return <Navigate to="/register" replace />;
   }
 
@@ -28,7 +28,7 @@ const VerifySignupOtp = () => {
     setLoading(true);
     setError('');
     try {
-      await authAPI.completeSignup({ username, email, password, otp: otp.trim() });
+      await authAPI.completeSignup({ full_name: fullName, email, password, otp: otp.trim() });
       navigate('/login', { state: { message: 'Account created! Please sign in.' } });
     } catch (err) {
       setError(apiErrorMessage(err, 'Could not verify the code. Please try again.'));

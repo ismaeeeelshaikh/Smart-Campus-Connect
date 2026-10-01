@@ -8,28 +8,18 @@ from ..utils.security import get_password_hash, verify_password
 class AuthService:
     @staticmethod
     async def create_user(user_data: UserCreate, db: AsyncSession) -> User:
-        # Check if user exists
+        # Email is the unique login; names don't have to be unique
         result = await db.execute(select(User).filter(User.email == user_data.email))
         if result.scalar_one_or_none():
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email already registered"
             )
-        
-        # Check if username exists
-        result = await db.execute(select(User).filter(User.username == user_data.username))
-        if result.scalar_one_or_none():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username already taken"
-            )
-        
-        # Create user
-        hashed_password = get_password_hash(user_data.password)
+
         db_user = User(
-            username=user_data.username,
+            full_name=user_data.full_name,
             email=user_data.email,
-            hashed_password=hashed_password
+            hashed_password=get_password_hash(user_data.password)
         )
         
         db.add(db_user)

@@ -3,8 +3,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_db
+from ..dependencies import get_current_user
 from ..models.user import User
-from ..schemas.user import UserCreate, UserLogin, EmailSchema, SignupWithOtp
+from ..schemas.user import UserCreate, UserLogin, EmailSchema, SignupWithOtp, ProfileUpdate
 from ..services.auth import AuthService
 from ..utils.security import create_access_token
 from ..config import settings
@@ -38,12 +39,24 @@ async def login(user_data: UserLogin, request: Request, db: AsyncSession = Depen
         data={"sub": user.email},
         expires_delta=timedelta(minutes=settings.access_token_expire_minutes),
     )
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user": {"id": user.id, "username": user.username, "email": user.email,
-                 "is_admin": settings.is_admin(user.email)},
-    }
+    return {"access_token": access_token, "token_type": "bearer", "user": _user_dict(user)}
+
+
+def _user_dict(user: User) -> dict:
+    return {"id": user.id, "full_name": user.full_name, "email": user.email, "is_admin": settings.is_admin(user.email)}
+
+
+@router.get("/me")
+async def me(user: User = Depends(get_current_user)):
+    return _user_dict(user)
+
+
+@router.patch("/me")
+async def update_profile(data: ProfileUpdate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Change your display name (e.g. accounts created before full names existed)."""
+    user.full_name = data.full_name
+    await db.commit()
+    return _user_dict(user)
 
 
 # ---- Signup with email OTP ----
@@ -84,7 +97,7 @@ async def complete_signup(data: SignupWithOtp, db: AsyncSession = Depends(get_db
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired OTP")
 
     user = await AuthService.create_user(
-        UserCreate(username=data.username, email=email, password=data.password), db
+        UserCreate(full_name=data.full_name, email=email, password=data.password), db
     )
     await delete_otps(email, db)  # an OTP must not be reusable
     logger.info(f"User created via OTP signup: {user.id}")

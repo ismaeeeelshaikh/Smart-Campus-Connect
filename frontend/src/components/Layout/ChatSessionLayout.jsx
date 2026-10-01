@@ -4,10 +4,11 @@ import ChatSessionsSidebar from '../Sidebar/ChatSessionsSidebar';
 import ChatInterface from '../Chat/ChatInterface';
 import { useChatSessions } from '../../hooks/useChatSessions';
 import { useAuth } from '../../context/AuthContext';
+import { displayName } from '../../services/validation';
 
 const ChatSessionLayout = () => {
   const chat = useChatSessions();
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false); // mobile drawer
 
   const closeAfter = (fn) => (...args) => {
@@ -26,10 +27,11 @@ const ChatSessionLayout = () => {
       onDeleteSession={chat.deleteSession}
       user={user}
       onLogout={logout}
+      onUserUpdated={updateUser}
     />
   );
 
-  const firstName = user?.username ? user.username.split(/[\s._-]/)[0] : '';
+  const firstName = displayName(user).split(/[\s._-]/)[0];
 
   return (
     <div className="flex h-screen overflow-hidden bg-paper">

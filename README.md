@@ -95,6 +95,10 @@ The UI uses an "APSIT Heritage" design system taken from the college crest: deep
   - "Try again" when a question fails
   - voice input (Chrome/Edge, `en-IN`) that asks for the microphone only when you press the mic
 - **Mobile:** the sidebar becomes a drawer behind the menu button.
+- **Languages:** ask in English, Hindi, Marathi or Hinglish and the answer comes back in the same language (Hinglish in English letters). Non-English questions are translated into English for the search, because the website data is English. Names, numbers and links stay exactly as on the website.
+- **Profile:** students sign up with their full name (not a unique username) and can change it from the sidebar.
+
+> **Groq limits:** on Groq's free tier, `openai/gpt-oss-120b` allows about 8,000 tokens per minute, roughly 3 questions per minute for the whole app. When that's exceeded, users see "The assistant is getting a lot of questions right now…". Upgrade the Groq plan before real use.
 
 ## Knowledge base
 

@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import re
 import secrets
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import JWTError, jwt
@@ -19,10 +20,9 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
-# ---- Password and username rules (used by the signup and reset schemas) ----
+# ---- Password and name rules (used by the signup, profile and reset schemas) ----
 PASSWORD_RULE = "Password must be 8-128 characters and include an uppercase letter, a lowercase letter and a number."
-USERNAME_RULE = "Username must be 3-30 characters: letters, numbers, dot, underscore or hyphen."
-_USERNAME_RE = re.compile(r"^[A-Za-z0-9._-]{3,30}$")
+FULL_NAME_RULE = "Please enter your full name (2-60 characters: letters, spaces, . ' -)."
 
 def check_password_strength(password: str) -> str:
     if not (8 <= len(password) <= 128 and re.search(r"[a-z]", password)
@@ -30,11 +30,15 @@ def check_password_strength(password: str) -> str:
         raise ValueError(PASSWORD_RULE)
     return password
 
-def check_username(username: str) -> str:
-    username = username.strip()
-    if not _USERNAME_RE.match(username):
-        raise ValueError(USERNAME_RULE)
-    return username
+def check_full_name(name: str) -> str:
+    """Display name, e.g. "Rohan Sawant" or "Dr. A. D'Souza". Any script is allowed (Devanagari vowel
+    signs count as letters). Names don't have to be unique: people log in with their email."""
+    name = " ".join(name.split())  # trim and collapse spaces
+    letters = sum(1 for ch in name if unicodedata.category(ch)[0] in "LM")
+    allowed = all(unicodedata.category(ch)[0] in "LM" or ch in " .'-" for ch in name)
+    if not (2 <= len(name) <= 60 and letters >= 2 and allowed):
+        raise ValueError(FULL_NAME_RULE)
+    return name
 
 
 # ---- One-time passwords ----

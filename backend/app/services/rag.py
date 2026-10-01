@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass, field
 from typing import AsyncIterator, Optional, Union
 
+from groq import RateLimitError
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
 
@@ -21,10 +22,48 @@ MAX_HISTORY_ANSWER_CHARS = 1500
 CONTEXT_CHUNKS = 6
 CITATION_MARK_RE = re.compile(r"【[^】]*】")
 # A trailing "Source:" / "**Sources:**" block written by the model (turned into source chips)
-SOURCE_LABEL_RE = re.compile(r"^\s*[*_]*\s*(?:sources?|source\(s\)|references?)\s*[*_]*\s*:", re.I)
+SOURCE_LABEL_RE = re.compile(r"^\s*[*_]*\s*(?:sources?|source\(s\)|references?|स्रोत|स्त्रोत|संदर्भ)\s*[*_]*\s*:", re.I)
 LINK_ONLY_LINE_RE = re.compile(r"^\s*(?:[-*•]\s*)?(?:\[[^\]]*\]\([^)]+\)|<?https?://\S+>?)[\s,;.]*$")
 MARKDOWN_LINK_RE = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)")
 BARE_URL_RE = re.compile(r"https?://[^\s)\]>,]+")
+# Lines that can follow a "Source:" label: links, bare URLs or short list items ("- Civil Faculty page")
+SOURCE_BLOCK_LINE_RE = re.compile(r"^\s*(?:[-*•]\s+.{0,200}|\[[^\]]*\]\([^)]+\)[\s,;.]*|<?https?://\S+>?[\s,;.]*)$")
+# Facts in an answer that can be checked against the retrieved pages (bold terms, 3+ digit numbers)
+BOLD_RE = re.compile(r"\*\*([^*]{3,80})\*\*")
+NUMBER_RE = re.compile(r"\d[\d,]{2,}")
+MAX_INFERRED_SOURCES = 2
+
+# ---- Language handling ----
+# The knowledge base and the embedding model are English, so questions in Hindi / Marathi /
+# Hinglish are translated into an English search query first; the answer is then written in
+# the user's own language and script.
+DEVANAGARI_RE = re.compile(r"[ऀ-ॿ]")
+HINGLISH_WORDS = set("""hai hain hu hoon tha thi kya kyu kyun kaun kon konsa kaunsa kitna kitni kitne kab kahan kaha
+kaise kese ke ki ka ko mein mai main se aur bhi nahi nhi batao bata btao bhai yaar chahiye chaiye milega milegi
+hota hoti hote wala wali wale unka unki unke uska uski iska iski kar karna karte sakte sakta sakti raha rahi
+apna apni mujhe muje humko hume tum aap abhi kal jo agar toh""".split())
+
+TRANSLATE_PROMPT = """Translate the user's question about a college (A. P. Shah Institute of Technology, APSIT) into one clear, natural English question (a full sentence, not keywords). It may be in Hindi, Marathi or Hinglish. Keep names and numbers as they are. Write abbreviations together with their full form, e.g. "Head of Department (HOD)", "Training and Placement Officer (TPO)". Don't add the college name unless the user wrote it. Output ONLY the English question, nothing else."""
+
+
+def detect_language(text: str) -> str:
+    """'devanagari' (Hindi/Marathi script), 'hinglish' (Hindi words in English letters) or 'english'."""
+    if DEVANAGARI_RE.search(text):
+        return "devanagari"
+    words = set(re.findall(r"[a-z]+", text.lower()))
+    return "hinglish" if len(words & HINGLISH_WORDS) >= 2 else "english"
+
+
+LANGUAGE_INSTRUCTIONS = {
+    "english": "Answer in English.",
+    "hinglish": ("The user wrote in Hinglish (Hindi words in English letters). Answer in friendly Hinglish written ONLY in "
+                 "English letters (Roman script), never in Devanagari. Example style: \"Civil department ke HOD "
+                 "Dr. Mugdha Agarwadkar hain. Unka experience 17 years ka hai.\""),
+    "devanagari": ("The user wrote in Devanagari script. Answer in the same language they used (Hindi or Marathi), "
+                   "in Devanagari script, BUT write people's names, department and course names, email addresses and "
+                   "links in English letters exactly as in the CONTEXT (e.g. \"Dr. Mugdha Agarwadkar\", never a "
+                   "Devanagari spelling of the name)."),
+}
 
 SYSTEM_PROMPT = """You are Smart Campus Connect, the official AI assistant of A. P. Shah Institute of Technology (APSIT), Thane, Maharashtra. You help students, parents and applicants with questions about APSIT: admissions, fees, courses, departments, faculty, facilities, placements, events and contacts.
 
@@ -36,7 +75,14 @@ Rules:
 5. Be friendly and concise. Use short paragraphs, bullet points or tables when they make the answer clearer.
 6. Each context entry says where it comes from. Entries from the official APSIT website are the most up to date: if they disagree with an entry from a college data file, trust the website.
 7. When your answer uses website entries, end it with a line "Source:" followed by the page link(s) you used, as markdown links. Don't list sources you didn't use, and don't put context numbers like [1] or 【1】 in the text.
-8. If a question has nothing to do with APSIT or college life, politely say you can only help with APSIT-related questions."""
+8. If a question has nothing to do with APSIT or college life, politely say you can only help with APSIT-related questions.
+9. Reply in the same language and script as the user's question (English, Hindi, Marathi or Hinglish). The CONTEXT is in English: translate the facts, but keep people's names, department and course names, numbers, fees, dates, email addresses and links exactly as written in the CONTEXT (do not transliterate names into another script)."""
+
+
+class AssistantBusy(Exception):
+    """The LLM provider's rate limit was hit (e.g. Groq tokens-per-minute on the free tier)."""
+
+    USER_MESSAGE = "The assistant is getting a lot of questions right now. Please try again in a minute."
 
 
 @dataclass
@@ -47,16 +93,32 @@ class Answer:
 
 
 class RAGService:
-    def __init__(self, kb: KnowledgeBase, llm: ChatGroq):
+    def __init__(self, kb: KnowledgeBase, llm: ChatGroq, fast_llm: Optional[ChatGroq] = None):
         self.kb = kb
         self.llm = llm
+        self.fast_llm = fast_llm or llm  # used for the quick translation step
 
-    async def _retrieve(self, question: str, history: History) -> list[dict]:
-        # A follow-up like "what is her qualification?" has no name in it, so also search
-        # with the previous question attached, then merge both result lists.
-        queries = [question]
+    async def _english_query(self, question: str, language: str) -> str:
+        """English search query for a Hindi / Marathi / Hinglish question (the question itself otherwise)."""
+        if language == "english":
+            return question
+        try:
+            response = await self.fast_llm.ainvoke([SystemMessage(content=TRANSLATE_PROMPT), HumanMessage(content=question)])
+            query = response.content.strip().strip('"').splitlines()[0][:300] if response.content.strip() else ""
+            return query or question
+        except Exception:
+            logger.warning("Query translation failed; searching with the original question", exc_info=True)
+            return question
+
+    async def _retrieve(self, question: str, history: History, search_query: Optional[str] = None) -> list[dict]:
+        # Search with the English query; for Hinglish also with the original words (names in English
+        # letters match better there; Devanagari text would only match unrelated Devanagari pages).
+        # For follow-ups like "what is her qualification?" also search with the previous question attached.
+        queries = [search_query or question]
+        if search_query and search_query != question and detect_language(question) == "hinglish":
+            queries.append(question)
         if history:
-            queries.append(f"{history[-1][0]} {question}")
+            queries.append(f"{history[-1][0]} {search_query or question}")
         results = await asyncio.gather(
             *(asyncio.to_thread(self.kb.search, q, CONTEXT_CHUNKS) for q in queries)
         )
@@ -68,33 +130,45 @@ class RAGService:
 
     async def _prepare(self, question: str, history: Optional[History]) -> tuple[list, list[dict]]:
         history = (history or [])[-MAX_HISTORY_TURNS:]
-        hits = await self._retrieve(question, history)
+        language = detect_language(question)
+        search_query = await self._english_query(question, language)
+        hits = await self._retrieve(question, history, search_query)
 
         context = "\n\n".join(f"[{i}] ({_origin(h)})\n{h['text']}" for i, h in enumerate(hits, 1)) \
             or "(no matching information found)"
         greeting = "" if history else \
-            "\n\n(This is the first message of the conversation: you may start with one short friendly greeting.)"
+            "\n(This is the first message of the conversation: you may start with one short friendly greeting.)"
 
         messages = [SystemMessage(content=SYSTEM_PROMPT)]
         for past_question, past_answer in history:
             messages.append(HumanMessage(content=past_question))
             messages.append(AIMessage(content=past_answer[:MAX_HISTORY_ANSWER_CHARS]))
-        messages.append(HumanMessage(content=f"CONTEXT:\n{context}{greeting}\n\nQUESTION: {question}"))
+        messages.append(HumanMessage(
+            content=f"CONTEXT:\n{context}\n\n(Language: {LANGUAGE_INSTRUCTIONS[language]}){greeting}\n\nQUESTION: {question}"
+        ))
         return messages, hits
 
     async def answer(self, question: str, history: Optional[History] = None) -> Answer:
         messages, hits = await self._prepare(question, history)
-        response = await self.llm.ainvoke(messages)
+        try:
+            response = await self.llm.ainvoke(messages)
+        except RateLimitError as e:
+            logger.warning(f"LLM rate limit hit: {e}")
+            raise AssistantBusy() from e
         return finalize_answer(response.content, hits)
 
     async def stream(self, question: str, history: Optional[History] = None) -> AsyncIterator[Union[str, Answer]]:
         """Yields text pieces as the model writes them, then one final cleaned-up Answer."""
         messages, hits = await self._prepare(question, history)
         parts = []
-        async for chunk in self.llm.astream(messages):
-            if chunk.content:
-                parts.append(chunk.content)
-                yield chunk.content
+        try:
+            async for chunk in self.llm.astream(messages):
+                if chunk.content:
+                    parts.append(chunk.content)
+                    yield chunk.content
+        except RateLimitError as e:
+            logger.warning(f"LLM rate limit hit: {e}")
+            raise AssistantBusy() from e
         yield finalize_answer("".join(parts), hits)
 
 
@@ -105,7 +179,7 @@ def finalize_answer(raw: str, hits: list[dict]) -> Answer:
     text = CITATION_MARK_RE.sub("", raw).strip()
     lines = text.split("\n")
     j = len(lines) - 1
-    while j >= 0 and (not lines[j].strip() or LINK_ONLY_LINE_RE.match(lines[j])):
+    while j >= 0 and (not lines[j].strip() or SOURCE_BLOCK_LINE_RE.match(lines[j])):
         j -= 1
     cited_block = ""
     if j >= 0 and SOURCE_LABEL_RE.match(lines[j]):
@@ -125,7 +199,32 @@ def finalize_answer(raw: str, hits: list[dict]) -> Answer:
         if hit and key not in seen:
             seen.add(key)
             sources.append({"title": hit["title"], "url": hit["url"]})
+    if not sources:
+        sources = _infer_sources(text, hits)
     return Answer(text=text, sources=sources)
+
+
+def _infer_sources(text: str, hits: list[dict]) -> list[dict]:
+    """When the model cited no page: the best-ranked website pages that really contain a fact from the
+    answer (a bold name/term or a 3+ digit number like a fee). Names and numbers stay in English in every
+    language, so this also works for Hindi / Marathi / Hinglish answers."""
+    facts = {b.strip().lower().replace(",", "") for b in BOLD_RE.findall(text)}
+    facts |= {n.replace(",", "") for n in NUMBER_RE.findall(text)}
+    facts = {f for f in facts if len(f) >= 3}
+    if not facts:
+        return []
+    sources, seen = [], set()
+    for hit in hits:  # already sorted best first
+        url = hit.get("url")
+        if not url or url in seen:
+            continue
+        page_text = hit["text"].lower().replace(",", "")
+        if any(f in page_text for f in facts):
+            seen.add(url)
+            sources.append({"title": hit["title"], "url": url})
+            if len(sources) == MAX_INFERRED_SOURCES:
+                break
+    return sources
 
 
 def _origin(hit: dict) -> str:
@@ -153,7 +252,17 @@ def init_rag_service() -> RAGService:
         max_retries=2,
         timeout=60,
     )
-    _service = RAGService(kb, llm)
+    # Quick, low-effort calls (translating a question into an English search query)
+    fast_llm = ChatGroq(
+        api_key=settings.groq_api_key,
+        model=settings.groq_model,
+        temperature=0,
+        reasoning_effort="low",
+        max_tokens=300,
+        max_retries=1,
+        timeout=20,
+    )
+    _service = RAGService(kb, llm, fast_llm)
     return _service
 
 

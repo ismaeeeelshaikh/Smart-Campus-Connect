@@ -42,6 +42,7 @@ export const authAPI = {
   login: (userData) => api.post('/auth/login', userData),
   requestSignupOtp: (email) => api.post('/auth/request-signup-otp', { email }),
   completeSignup: (data) => api.post('/auth/complete-signup', data),
+  updateProfile: (fullName) => api.patch('/auth/me', { full_name: fullName }),
 };
 
 // Public chat for visitors without an account; nothing is saved on the server

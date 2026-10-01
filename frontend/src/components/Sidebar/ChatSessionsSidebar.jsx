@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Check, LogOut, MessageSquareText, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { Wordmark } from '../Brand/Brand';
+import { authAPI } from '../../services/api';
+import { FULL_NAME_RULE, apiErrorMessage, displayName, isValidFullName, normalizeName } from '../../services/validation';
 
 const relativeTime = (value) => {
   const date = new Date(value);
@@ -93,7 +95,7 @@ const SessionItem = ({ session, active, onSelect, onRename, onDelete }) => {
 };
 
 const ChatSessionsSidebar = ({
-  sessions, sessionsLoaded, currentSession, onNewChat, onSelectSession, onUpdateTitle, onDeleteSession, user, onLogout,
+  sessions, sessionsLoaded, currentSession, onNewChat, onSelectSession, onUpdateTitle, onDeleteSession, user, onLogout, onUserUpdated,
 }) => (
   <div className="flex h-full w-[280px] flex-col border-r border-line bg-white">
     <div className="px-5 pb-4 pt-5">
@@ -127,21 +129,79 @@ const ChatSessionsSidebar = ({
       )}
     </div>
 
-    {user && (
-      <div className="flex items-center gap-3 border-t border-line px-4 py-4">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-teal-800 text-sm font-semibold text-gold-300">
-          {initials(user.username)}
-        </span>
-        <div className="min-w-0 flex-1 leading-tight">
-          <div className="truncate text-sm font-semibold text-ink">{user.username}</div>
-          <div className="truncate text-xs text-ink-400">{user.email}</div>
-        </div>
-        <button type="button" onClick={onLogout} className="rounded-lg p-2 text-ink-400 transition hover:bg-paper-100 hover:text-crimson-600" title="Sign out" aria-label="Sign out">
-          <LogOut className="h-[18px] w-[18px]" />
-        </button>
-      </div>
-    )}
+    {user && <UserCard user={user} onLogout={onLogout} onUserUpdated={onUserUpdated} />}
   </div>
 );
+
+// Signed-in user, with an inline "edit your name" form
+const UserCard = ({ user, onLogout, onUserUpdated }) => {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const shownName = displayName(user);
+
+  const startEditing = () => {
+    setName(shownName);
+    setError('');
+    setEditing(true);
+  };
+
+  const save = async (e) => {
+    e.preventDefault();
+    const fullName = normalizeName(name);
+    if (!isValidFullName(fullName)) return setError(FULL_NAME_RULE);
+    setSaving(true);
+    try {
+      const response = await authAPI.updateProfile(fullName);
+      onUserUpdated?.({ ...user, ...response.data });
+      setEditing(false);
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Could not save your name.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (editing) {
+    return (
+      <form onSubmit={save} className="border-t border-line px-4 py-3">
+        <label htmlFor="profile-name" className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-ink-400">Your name</label>
+        <div className="flex gap-1.5">
+          <input
+            id="profile-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} autoFocus
+            onKeyDown={(e) => e.key === 'Escape' && setEditing(false)}
+            className="field-input min-w-0 flex-1 px-2.5 py-1.5 text-sm"
+          />
+          <button type="submit" disabled={saving} className="rounded-lg bg-teal-700 p-2 text-white hover:bg-teal-800 disabled:opacity-60" aria-label="Save name">
+            <Check className="h-4 w-4" />
+          </button>
+          <button type="button" onClick={() => setEditing(false)} className="rounded-lg p-2 text-ink-400 hover:bg-paper-100" aria-label="Cancel">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        {error && <p className="mt-1.5 text-xs text-crimson-600">{error}</p>}
+      </form>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-3 border-t border-line px-4 py-4">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-teal-800 text-sm font-semibold text-gold-300">
+        {initials(shownName)}
+      </span>
+      <div className="group min-w-0 flex-1 leading-tight">
+        <button type="button" onClick={startEditing} className="flex max-w-full items-center gap-1.5 text-left" title="Edit your name">
+          <span className="truncate text-sm font-semibold text-ink">{shownName}</span>
+          <Pencil className="h-3 w-3 shrink-0 text-ink-300 opacity-0 transition group-hover:opacity-100" />
+        </button>
+        <div className="truncate text-xs text-ink-400">{user.email}</div>
+      </div>
+      <button type="button" onClick={onLogout} className="rounded-lg p-2 text-ink-400 transition hover:bg-paper-100 hover:text-crimson-600" title="Sign out" aria-label="Sign out">
+        <LogOut className="h-[18px] w-[18px]" />
+      </button>
+    </div>
+  );
+};
 
 export default ChatSessionsSidebar;

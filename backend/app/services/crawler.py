@@ -140,6 +140,8 @@ def _card_sentence(card, page_url: str) -> Optional[str]:
         value = ", ".join(v for v in items if v)
         if value:
             label = "experience" if label == "year-of-passing" else label.replace("-", " ")
+            if "head of department" in value.lower() and "hod" not in value.lower():
+                value += " (HOD)"  # people search for "HOD"; the site only writes it out in full
             parts.append(f"{label}: {value}")
     if not name or not parts:
         return None

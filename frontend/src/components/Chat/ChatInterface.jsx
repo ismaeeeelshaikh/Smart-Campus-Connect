@@ -20,6 +20,7 @@ const Welcome = ({ onPick, greeting }) => (
       Ask about admissions, departments, faculty, facilities or placements at A. P. Shah Institute of Technology.
       Answers come from the college website, with links to the source.
     </p>
+    <p className="mt-2 text-sm text-teal-700">Ask in English, हिंदी, मराठी or Hinglish — you&apos;ll get the answer in the same language.</p>
     <div className="mt-8 grid w-full gap-3 sm:grid-cols-2">
       {SUGGESTIONS.map(({ icon: Icon, label, question }) => (
         <button

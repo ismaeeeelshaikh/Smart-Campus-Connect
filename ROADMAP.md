@@ -357,6 +357,24 @@ Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a6
 - a dark mode
 - the "Source:" chips depend on the model citing pages; if it cites nothing, no chips are shown
 
+### Added after Phase 6 (2026-10-01)
+- [x] **Full name instead of username.** People log in with their email, so the old unique "username" was just friction ("username already taken").
+  - **Rename, not delete:** migration `eaf2a69d2c62` renames `users.username` → `users.full_name` and drops the unique index, so existing accounts keep their name.
+  - **Rules:** 2-60 characters of letters (any script, so Hindi/Marathi names are allowed), spaces, `.` `'` `-`. Two students can have the same name.
+  - **Display:** signup asks for "Full name"; the greeting uses the first name; the sidebar shows the name and initials.
+  - **New `GET`/`PATCH /auth/me`:** a pencil next to the name in the sidebar lets older accounts set a proper full name.
+- [x] **Multilingual answers: English, Hindi, Marathi and Hinglish.**
+  - **Problem found by testing:** Hinglish questions were answered in Devanagari Hindi; pure Hindi and Marathi questions found nothing, because the embedding model and the data are English; names were transliterated wrongly ("Agarwadkar" → "अग्रवालकर").
+  - **Language detection:** `detect_language()` → `devanagari` (Hindi/Marathi script) / `hinglish` (≥2 common Hindi words in English letters) / `english`.
+  - **Search in English:** non-English questions are first translated into a clear English question by a fast, low-reasoning call (`fast_llm`), with abbreviations expanded ("Head of Department (HOD)"). Devanagari questions are searched only in English; Hinglish ones also with the original words.
+  - **Answer language:** the prompt says which language and script to answer in. Hinglish is answered in English letters. Names, numbers, emails and links are kept in English letters exactly as in the context.
+  - **Source chips in every language:** "स्रोत:" source lines are recognised too. When the model cites no page, up to 2 website pages that really contain a bold name or 3+ digit number from the answer are shown as sources.
+  - **Crawler:** faculty cards say "Head of Department (HOD)" (applies at the next sync).
+  - **Welcome screen:** says you can ask in English, हिंदी, मराठी or Hinglish.
+  - *Verified live:* Hinglish → "Civil department ke HOD Dr. Mugdha Agarwadkar hain…" (chip Civil Faculty); pure Hindi and Marathi now find the HOD, with the name in English letters; Hinglish fees and placements answered in Hinglish.
+- [x] **AI provider rate limit → friendly message.** Groq's free tier allows **8,000 tokens/minute** for `openai/gpt-oss-120b`, and one question uses ~2,300 tokens, so only ~3 questions per minute fit for the whole app. A 429 from Groq now gives "The assistant is getting a lot of questions right now. Please try again in a minute." (HTTP 503 / stream `error` event) instead of a generic error. **Before real use: upgrade the Groq plan** (see Phase 8).
+- *Tests:* 89/89 API checks (+ full name, profile, duplicate names, busy messages); 9/9 source-extraction cases.
+
 ---
 
 ## Phase 7: Tests + CI
@@ -374,6 +392,7 @@ Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a6
 - [ ] **8.2** Run the crawler scheduler in **one** process only: a separate `worker` service, or a DB lock if you run several uvicorn workers.
 - [ ] **8.3** Make `/health` check the DB, Chroma and Groq. Use structured logs. Email the admin when a crawl fails.
 - [ ] **8.4** Daily Postgres backups. Chroma doesn't need backups, since the crawler can rebuild it.
+- [ ] **8.0 Groq plan:** the free tier (8,000 tokens/minute ≈ 3 questions/minute for the whole app) is too small for real students. Upgrade (Dev tier) or pick a model with higher limits.
 - [ ] **8.5** Hosting: a small VPS or Render/Railway with ≥ 2 GB RAM (the bge-base embedding model needs ~1 GB), HTTPS via the platform or Caddy/nginx + Let's Encrypt.
 
 **Done when:** the app runs at a public HTTPS URL, survives a restart without losing data, and the crawler updates it on schedule.
@@ -394,3 +413,4 @@ Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a6
 | 2026-10-01 | Phase 4 | Live website sync: crawler, incremental index, scheduler, admin panel + single-page update; 1,046 pages indexed; 49/49 checks + demo pass |
 | 2026-10-01 | Phase 5 | Rate limits, hashed OTPs with attempt limits, password rules, sessions revoked on password reset, security headers; 70/70 checks pass |
 | 2026-10-01 | Phase 6 | APSIT Heritage redesign (Stitch concepts), streaming answers, source chips, VITE_API_URL, ESLint, error states; 81/81 API checks |
+| 2026-10-01 | After Phase 6 | Full name instead of username, multilingual answers (Hindi/Marathi/Hinglish), friendly AI rate-limit message; 89/89 checks |
