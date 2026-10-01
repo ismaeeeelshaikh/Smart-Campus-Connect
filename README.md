@@ -6,10 +6,11 @@ An AI chatbot for **A.P. Shah Institute of Technology (APSIT), Thane**. It answe
 - **Visitors** (future students, parents) can chat as a guest without an account.
 
 - **Backend:** FastAPI, async SQLAlchemy + PostgreSQL, Alembic, JWT auth
-- **AI:** retrieval-augmented generation (LangChain + Chroma + `BAAI/bge-base-en-v1.5` embeddings) with a Groq-hosted LLM
+- **AI:** retrieval-augmented generation (LangChain + Chroma + `BAAI/bge-base-en-v1.5` embeddings) with any OpenAI-compatible LLM: Groq for now, a self-hosted model on the college DGX server later
 - **Frontend:** React 18 + Vite + Tailwind CSS
+- **Deployment:** Docker Compose with PostgreSQL and Caddy (HTTPS); see [DEPLOYMENT.md](DEPLOYMENT.md)
 
-Work in progress: see [ROADMAP.md](ROADMAP.md) for the step-by-step plan to make this production-ready (including live sync with apsit.edu.in).
+The step-by-step plan that made this production-ready is in [ROADMAP.md](ROADMAP.md).
 
 ---
 
@@ -20,7 +21,7 @@ Work in progress: see [ROADMAP.md](ROADMAP.md) for the step-by-step plan to make
 | Python | **3.12** | 3.13+ is not yet supported by some ML packages |
 | PostgreSQL | 14+ | |
 | Node.js | 18+ | |
-| Groq API key | | Free at https://console.groq.com/keys |
+| LLM API key | | For now Groq: free at https://console.groq.com/keys (see [LLM](#llm)) |
 | Gmail account with an App Password | | Sends the OTP emails. Create one at https://myaccount.google.com/apppasswords (needs 2-Step Verification) |
 
 The commands below are for Windows PowerShell.
@@ -45,12 +46,12 @@ Create the database once. Use pgAdmin, or:
 & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres -c "CREATE DATABASE college_ai;"
 ```
 
-Create the tables, then (optionally) check that the database and Groq key work:
+Create the tables, then (optionally) check that the database and the LLM work:
 
 ```powershell
 alembic upgrade head
 python -m scripts.check_db
-python -m scripts.check_groq
+python -m scripts.check_llm
 ```
 
 Start the API:
@@ -98,7 +99,19 @@ The UI uses an "APSIT Heritage" design system taken from the college crest: deep
 - **Languages:** ask in English, Hindi, Marathi or Hinglish and the answer comes back in the same language (Hinglish in English letters). Non-English questions are translated into English for the search, because the website data is English. Names, numbers and links stay exactly as on the website.
 - **Profile:** students sign up with their full name (not a unique username) and can change it from the sidebar.
 
-> **LLM limits (for now):** development uses Groq's free tier, where `openai/gpt-oss-120b` allows about 8,000 tokens per minute (roughly 3 questions per minute for the whole app). When that's exceeded, users see "The assistant is getting a lot of questions right now…". For deployment the plan is a self-hosted LLM on the college DGX server (see ROADMAP Phase 8).
+## LLM
+
+The backend talks to any chat API that is OpenAI-compatible, set by three keys in `backend/.env`:
+
+```
+LLM_BASE_URL=https://api.groq.com/openai/v1   # for now: Groq
+LLM_MODEL=openai/gpt-oss-120b
+LLM_API_KEY=<key>
+```
+
+- **The plan:** a self-hosted model on the college DGX server (vLLM, Ollama or TGI all have this API). Switching is only a change of these keys; see [DEPLOYMENT.md](DEPLOYMENT.md#switching-to-the-college-dgx-llm). The old names `GROQ_API_KEY` / `GROQ_MODEL` still work.
+- **Limits for now:** Groq's free tier allows about 8,000 tokens per minute for `openai/gpt-oss-120b`, roughly 3 questions per minute for the whole app. When that's exceeded, users see "The assistant is getting a lot of questions right now…".
+- **If the LLM server can't be reached,** users see "The assistant is not available right now…" and `/health` reports `"llm": "unreachable"`.
 
 ## Knowledge base
 
@@ -144,7 +157,7 @@ pytest
 ```
 
 - **Separate database:** the tests use `college_ai_test` (your `DATABASE_URL` database name + `_test`, or `TEST_DATABASE_URL`), which is created and migrated automatically. They refuse to run on a database whose name doesn't end in `_test`, so your real data is safe.
-- **No email, no AI:** email sending and the AI are stubbed, so no emails are sent and no Groq calls are made.
+- **No email, no AI:** email sending and the AI are stubbed, so no emails are sent and no LLM calls are made.
 - **What's covered:**
   - signup/OTP rules, login, profile, password reset, rate limits, security headers
   - chats (incl. streaming, sources, and that one student can't see another's chats), guest chat, admin endpoints
@@ -160,6 +173,12 @@ python -m scripts.eval_answers --delay 0  # with a faster / self-hosted LLM
 ```
 
 **CI:** `.github/workflows/ci.yml` runs the backend lint and tests (with a PostgreSQL service) plus the frontend lint and build on every push and pull request.
+
+## Deployment
+
+`docker compose up -d --build` runs PostgreSQL, the backend, Caddy (frontend + HTTPS) and a daily database backup on one server. Step-by-step guide (a free Oracle Cloud VM or a college server): [DEPLOYMENT.md](DEPLOYMENT.md).
+
+`GET /health` reports the database, the knowledge base (number of chunks) and whether the LLM server answers. It returns 503 if the database or the knowledge base is down.
 
 ## Database migrations
 
@@ -181,18 +200,21 @@ backend/
     config.py         all settings, loaded from backend/.env
     database.py       async SQLAlchemy engine + session
     models/           database tables
-    routers/          API endpoints (auth, chat sessions, guest chat, password reset)
+    routers/          API endpoints (auth, chat sessions, guest chat, password reset, admin, health)
     services/         business logic (auth, OTP, email, knowledge base, RAG,
                       website crawler + sync)
     schemas/          request/response models
   alembic/            database migrations
   college_data/       knowledge base text files
-  scripts/            check_db.py, check_groq.py, build_index.py
+  scripts/            check_db.py, check_llm.py, build_index.py, eval_answers.py
+  Dockerfile
 frontend/
   src/
     components/       Auth, Chat, Layout, Sidebar
     context/, hooks/  auth state, chat sessions
     services/         API client
+  Dockerfile, Caddyfile
+docker-compose.yml    production setup (see DEPLOYMENT.md)
 ```
 
 ## Security
@@ -204,5 +226,5 @@ frontend/
 - **Passwords:** 8–128 characters with uppercase, lowercase and a number; hashed with argon2. A password reset logs out every other session.
 - **Rate limits:** too many login, OTP or password-reset requests get `429 Too many attempts` (per email and per IP). Chat is not rate-limited.
 - **API responses** carry security headers (`nosniff`, `X-Frame-Options: DENY`, ...).
-- **In production:** set `ENABLE_DOCS=false`. Set `TRUST_PROXY_HEADERS=true` only behind a reverse proxy.
+- **In production:** set `ENABLE_DOCS=false`. Set `TRUST_PROXY_HEADERS=true` only behind a reverse proxy. `docker-compose.yml` does both.
 - **The website crawler** only follows redirects within `www.apsit.edu.in`.

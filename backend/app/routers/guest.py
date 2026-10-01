@@ -34,8 +34,8 @@ class GuestChatResponse(BaseModel):
 async def guest_chat(payload: GuestChatRequest):
     try:
         answer = await get_rag_service().answer(payload.question.strip(), payload.history_pairs())
-    except AssistantBusy:
-        raise HTTPException(status_code=503, detail=AssistantBusy.USER_MESSAGE)
+    except AssistantBusy as e:
+        raise HTTPException(status_code=503, detail=e.USER_MESSAGE)
     except Exception:
         logger.exception("Guest chat failed")
         raise HTTPException(status_code=500, detail="Could not answer right now. Please try again.")
@@ -52,8 +52,8 @@ async def guest_chat_stream(payload: GuestChatRequest):
                     yield sse("done", {"answer": piece.text, "sources": piece.sources})
                 else:
                     yield sse("token", {"text": piece})
-        except AssistantBusy:
-            yield sse("error", {"detail": AssistantBusy.USER_MESSAGE})
+        except AssistantBusy as e:
+            yield sse("error", {"detail": e.USER_MESSAGE})
         except Exception:
             logger.exception("Guest chat stream failed")
             yield sse("error", {"detail": "Could not answer right now. Please try again."})

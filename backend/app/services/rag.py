@@ -5,11 +5,11 @@ import re
 from dataclasses import dataclass, field
 from typing import AsyncIterator, Optional, Union
 
-from groq import RateLimitError
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from openai import APIConnectionError, InternalServerError, RateLimitError
 
-# langchain_groq is imported in init_rag_service(): it pulls in `transformers`, which takes ~30 s
-# to import, and tests (which use a stub instead of the real LLM) shouldn't wait for that.
+# langchain_openai is imported in create_chat_model(), only when the real LLM is used, so tests
+# (which use a stub instead) start faster.
 
 from ..config import settings
 from .knowledge_base import KnowledgeBase
@@ -87,6 +87,23 @@ class AssistantBusy(Exception):
     USER_MESSAGE = "The assistant is getting a lot of questions right now. Please try again in a minute."
 
 
+class AssistantUnavailable(AssistantBusy):
+    """The LLM server can't be reached or failed (e.g. the self-hosted server is down)."""
+
+    USER_MESSAGE = "The assistant is not available right now. Please try again in a few minutes."
+
+
+LLM_ERRORS = (RateLimitError, APIConnectionError, InternalServerError)
+
+
+def _assistant_error(e: Exception) -> AssistantBusy:
+    if isinstance(e, RateLimitError):
+        logger.warning(f"LLM rate limit hit: {e}")
+        return AssistantBusy()
+    logger.error(f"LLM server unavailable ({settings.llm_base_url}): {e!r}")
+    return AssistantUnavailable()
+
+
 @dataclass
 class Answer:
     text: str
@@ -154,9 +171,8 @@ class RAGService:
         messages, hits = await self._prepare(question, history)
         try:
             response = await self.llm.ainvoke(messages)
-        except RateLimitError as e:
-            logger.warning(f"LLM rate limit hit: {e}")
-            raise AssistantBusy() from e
+        except LLM_ERRORS as e:
+            raise _assistant_error(e) from e
         return finalize_answer(response.content, hits)
 
     async def stream(self, question: str, history: Optional[History] = None) -> AsyncIterator[Union[str, Answer]]:
@@ -168,9 +184,8 @@ class RAGService:
                 if chunk.content:
                     parts.append(chunk.content)
                     yield chunk.content
-        except RateLimitError as e:
-            logger.warning(f"LLM rate limit hit: {e}")
-            raise AssistantBusy() from e
+        except LLM_ERRORS as e:
+            raise _assistant_error(e) from e
         yield finalize_answer("".join(parts), hits)
 
 
@@ -253,31 +268,35 @@ def _origin(hit: dict) -> str:
 _service: Optional[RAGService] = None
 
 
+def create_chat_model(**options):
+    """Chat model for the configured OpenAI-compatible LLM server (Groq now, the college DGX server later)."""
+    from langchain_openai import ChatOpenAI
+
+    return ChatOpenAI(
+        base_url=settings.llm_base_url,
+        api_key=settings.llm_api_key or "not-needed",  # self-hosted servers often need no key
+        model=settings.llm_model,
+        use_responses_api=False,  # plain chat completions: supported by every OpenAI-compatible server
+        **options,
+    )
+
+
 def init_rag_service() -> RAGService:
     """Load the embedding model, open the index and sync college_data/. Slow: call once at startup."""
-    from langchain_groq import ChatGroq
-
     global _service
     kb = KnowledgeBase(settings.backend_path(settings.chroma_dir), settings.embedding_model)
     stats = kb.sync_folder(settings.backend_path(settings.college_data_dir))
     logger.info(f"college_data synced: {stats}")
-    llm = ChatGroq(
-        api_key=settings.groq_api_key,
-        model=settings.groq_model,
-        temperature=0.2,
-        max_retries=2,
-        timeout=60,
-    )
+    llm = create_chat_model(temperature=0.2, max_retries=2, timeout=60)
     # Quick, low-effort calls (translating a question into an English search query)
-    fast_llm = ChatGroq(
-        api_key=settings.groq_api_key,
-        model=settings.groq_model,
+    fast_llm = create_chat_model(
         temperature=0,
-        reasoning_effort="low",
         max_tokens=300,
+        reasoning_effort=settings.llm_reasoning_effort or None,
         max_retries=1,
         timeout=20,
     )
+    logger.info(f"LLM: {settings.llm_model} at {settings.llm_base_url}")
     _service = RAGService(kb, llm, fast_llm)
     return _service
 

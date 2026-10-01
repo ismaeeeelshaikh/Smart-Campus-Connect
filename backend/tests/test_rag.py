@@ -1,7 +1,9 @@
 """RAG helpers: source extraction, language detection, and which queries get searched."""
+import httpx
+import openai
 import pytest
 
-from app.services.rag import RAGService, detect_language, finalize_answer
+from app.services.rag import AssistantBusy, AssistantUnavailable, RAGService, detect_language, finalize_answer
 
 HITS = [
     {"id": "1", "url": "https://www.apsit.edu.in/civil-faculty", "title": "Civil Faculty", "score": 0.9,
@@ -87,3 +89,34 @@ async def test_english_questions_skip_translation_and_follow_ups_add_the_previou
     messages, _ = await rag._prepare("What is her qualification?", [("Who is the HOD of Civil?", "Dr. Mugdha Agarwadkar")])
     assert kb.queries == ["What is her qualification?", "Who is the HOD of Civil? What is her qualification?"]
     assert "Answer in English." in messages[-1].content
+
+
+class FailingLLM:
+    def __init__(self, error):
+        self.error = error
+
+    async def ainvoke(self, messages):
+        raise self.error
+
+    async def astream(self, messages):
+        raise self.error
+        yield  # makes this an async generator
+
+
+REQUEST = httpx.Request("POST", "http://llm.local/v1/chat/completions")
+
+
+@pytest.mark.parametrize("error, expected", [
+    (openai.RateLimitError("429", response=httpx.Response(429, request=REQUEST), body=None), AssistantBusy),
+    (openai.APIConnectionError(request=REQUEST), AssistantUnavailable),      # server down / unreachable
+    (openai.APITimeoutError(request=REQUEST), AssistantUnavailable),
+    (openai.InternalServerError("502", response=httpx.Response(502, request=REQUEST), body=None), AssistantUnavailable),
+])
+async def test_llm_server_errors_become_friendly_errors(error, expected):
+    rag = RAGService(RecordingKB(), llm=FailingLLM(error))
+    with pytest.raises(expected) as info:
+        await rag.answer("Who is the HOD of Civil?")
+    assert type(info.value) is expected
+    with pytest.raises(expected):
+        async for _ in rag.stream("Who is the HOD of Civil?"):
+            pass

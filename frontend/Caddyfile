@@ -1,0 +1,35 @@
+# Serves the built React app and forwards /api/* to the backend container.
+# SITE_ADDRESS is ":80" (plain HTTP, for a first test) or a domain name such as chatbot.example.org,
+# for which Caddy gets and renews a free Let's Encrypt HTTPS certificate by itself.
+{$SITE_ADDRESS::80} {
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		# The voice-input button needs the microphone on this site only
+		Permissions-Policy "camera=(), geolocation=(), microphone=(self)"
+		-Server
+	}
+
+	# /api/chat-sessions -> http://backend:8000/chat-sessions
+	handle_path /api/* {
+		reverse_proxy backend:8000 {
+			# Send streamed answers (server-sent events) word by word instead of buffering them
+			flush_interval -1
+		}
+	}
+
+	handle {
+		encode zstd gzip
+		root * /srv
+		# Built files have a content hash in their name, so browsers may keep them for a year;
+		# everything else (index.html) is re-checked, so a new version shows up right away
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		@other not path /assets/*
+		header @other Cache-Control "no-cache"
+		# React routes (/guest, /reset-password, ...) all load index.html
+		try_files {path} /index.html
+		file_server
+	}
+}

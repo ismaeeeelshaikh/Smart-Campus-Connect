@@ -1,4 +1,5 @@
 from pathlib import Path
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # backend/ folder, resolved from this file so paths work no matter where you start the app
@@ -8,8 +9,17 @@ ENV_FILE = BACKEND_DIR / ".env"
 
 class Settings(BaseSettings):
     database_url: str
-    groq_api_key: str
-    groq_model: str = "openai/gpt-oss-120b"
+
+    # LLM: any OpenAI-compatible chat API. For now Groq's API stands in for the self-hosted model on
+    # the college DGX server; to switch, point these at the DGX server (vLLM / Ollama / TGI), e.g.
+    # LLM_BASE_URL=http://dgx-host:8000/v1. The old GROQ_API_KEY / GROQ_MODEL names still work.
+    llm_base_url: str = "https://api.groq.com/openai/v1"
+    llm_model: str = Field("openai/gpt-oss-120b", validation_alias=AliasChoices("llm_model", "groq_model"))
+    llm_api_key: str = Field("", validation_alias=AliasChoices("llm_api_key", "groq_api_key"))  # empty if none
+    # Sent with the quick translation call; "low" makes reasoning models (gpt-oss) answer faster.
+    # Leave empty for models that don't support it.
+    llm_reasoning_effort: str = "low"
+
     jwt_secret: str
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
@@ -47,9 +57,11 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=ENV_FILE, extra="ignore")
 
+    def admin_emails(self) -> list[str]:
+        return [e.strip().lower() for e in self.admin_email.split(",") if e.strip()]
+
     def is_admin(self, email: str) -> bool:
-        admins = {e.strip().lower() for e in self.admin_email.split(",") if e.strip()}
-        return email.strip().lower() in admins
+        return email.strip().lower() in self.admin_emails()
 
     def email_can_sign_up(self, email: str) -> bool:
         email = email.strip().lower()

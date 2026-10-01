@@ -3,7 +3,7 @@
 - Tests use their own database: TEST_DATABASE_URL, or the DATABASE_URL from backend/.env with
   "_test" added to the database name. They refuse to run on a database whose name doesn't end in
   "_test", so your real data is never touched. The database is created and migrated automatically.
-- Email sending and the AI (RAG/LLM) are always stubbed: no real emails, no Groq calls.
+- Email sending and the AI (RAG/LLM) are always stubbed: no real emails, no LLM calls.
 - Every test starts with empty tables and fresh rate limits.
 """
 import asyncio
@@ -38,7 +38,7 @@ TEST_DATABASE_URL = _test_database_url()
 # so the tests never use the real mail account or API key.
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ.update({
-    "GROQ_API_KEY": "test-key",
+    "LLM_API_KEY": "test-key",
     "JWT_SECRET": "test-secret-" + "x" * 48,
     "MAIL_USERNAME": "noreply@example.com",
     "MAIL_PASSWORD": "test",
@@ -134,6 +134,20 @@ def outbox(monkeypatch):
 
     monkeypatch.setattr(auth_router, "send_otp_email", capture)
     monkeypatch.setattr(reset_router, "send_reset_email", capture)
+    return sent
+
+
+@pytest.fixture(autouse=True)
+def admin_alerts(monkeypatch):
+    """Alert emails to the admins (e.g. a failed website sync) that would have been sent: [(subject, body)]."""
+    from app.services import website_sync
+    sent = []
+
+    async def capture(subject, body):
+        sent.append((subject, body))
+
+    monkeypatch.setattr(website_sync, "send_admin_alert", capture)
+    monkeypatch.setattr(website_sync, "_last_alert", None)
     return sent
 
 

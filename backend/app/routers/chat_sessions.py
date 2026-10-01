@@ -46,8 +46,8 @@ async def start_chat_session(
         )
         logger.info(f"Chat session {session_response.id} started for user {user.id}")
         return {"session": session_response, "message": message_response}
-    except AssistantBusy:
-        raise HTTPException(status_code=503, detail=AssistantBusy.USER_MESSAGE)
+    except AssistantBusy as e:
+        raise HTTPException(status_code=503, detail=e.USER_MESSAGE)
     except Exception:
         raise _server_error("start the chat")
 
@@ -92,8 +92,8 @@ async def send_message_to_session(
         return await ChatSessionService.add_message_to_session(session_id, user.id, message.question, db)
     except ValueError:
         raise HTTPException(status_code=404, detail=NOT_FOUND)
-    except AssistantBusy:
-        raise HTTPException(status_code=503, detail=AssistantBusy.USER_MESSAGE)
+    except AssistantBusy as e:
+        raise HTTPException(status_code=503, detail=e.USER_MESSAGE)
     except Exception:
         raise _server_error("send your message")
 

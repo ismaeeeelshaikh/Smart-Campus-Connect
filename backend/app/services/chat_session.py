@@ -108,8 +108,8 @@ class ChatSessionService:
             async with async_session() as db:  # own session: the request's one may already be closed
                 session, message = await ChatSessionService._save_new_session(user_id, question, answer, db)
             yield sse("done", {"session": session.model_dump(mode="json"), "message": message.model_dump(mode="json")})
-        except AssistantBusy:
-            yield sse("error", {"detail": AssistantBusy.USER_MESSAGE})
+        except AssistantBusy as e:
+            yield sse("error", {"detail": e.USER_MESSAGE})
         except Exception:
             logger.exception("Streaming a new chat failed")
             yield sse("error", {"detail": "Could not answer right now. Please try again."})
@@ -159,8 +159,8 @@ class ChatSessionService:
             async with async_session() as db:
                 message = await ChatSessionService._save_message(session_id, user_id, question, answer, db)
             yield sse("done", {"message": message.model_dump(mode="json")})
-        except AssistantBusy:
-            yield sse("error", {"detail": AssistantBusy.USER_MESSAGE})
+        except AssistantBusy as e:
+            yield sse("error", {"detail": e.USER_MESSAGE})
         except Exception:
             logger.exception("Streaming a follow-up message failed")
             yield sse("error", {"detail": "Could not answer right now. Please try again."})

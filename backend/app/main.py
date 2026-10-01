@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
-from .routers import admin, auth, chat_sessions, guest, password_reset
+from .routers import admin, auth, chat_sessions, guest, health, password_reset
 from .services import website_sync
 from .services.rag import init_rag_service
 
@@ -55,12 +55,9 @@ app.include_router(admin.router)
 app.include_router(auth.router)
 app.include_router(chat_sessions.router)
 app.include_router(guest.router)
+app.include_router(health.router)
 app.include_router(password_reset.router)
 
 @app.get("/")
 async def root():
     return {"message": "Smart Campus Connect API"}
-
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy"}

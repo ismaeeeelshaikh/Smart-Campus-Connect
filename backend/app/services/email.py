@@ -28,3 +28,9 @@ async def send_otp_email(email: str, otp: str):
 async def send_reset_email(email: str, otp: str):
     await _send(email, "College AI Chatbot Password Reset OTP",
                 f"Your OTP to reset your password is: {otp}")
+
+
+async def send_admin_alert(subject: str, body: str):
+    """Email every admin (ADMIN_EMAIL), e.g. when a website sync fails."""
+    for admin in settings.admin_emails():
+        await _send(admin, f"[Smart Campus Connect] {subject}", body)

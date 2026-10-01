@@ -14,6 +14,7 @@ from ..config import settings
 from ..database import async_session
 from ..models.website import CrawledPage, CrawlRun
 from .crawler import BASE_URL, CrawlResult, crawl, fetch_single, normalize_url
+from .email import send_admin_alert
 from .rag import get_rag_service
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,10 @@ WEB_KINDS = ("web", "pdf")
 # Only remove pages that weren't visited if this crawl reached at least this share of the
 # previous one; otherwise a network problem could wipe most of the knowledge base.
 MIN_COMPLETE_RATIO = 0.8
+# A failed sync is emailed to the admins at most this often (the schedule retries every 10 minutes,
+# so a long website outage would otherwise send an email every 10 minutes).
+ALERT_EVERY = timedelta(hours=24)
+_last_alert: Optional[datetime] = None
 
 _lock = asyncio.Lock()
 _tasks: set[asyncio.Task] = set()  # keep references so background tasks aren't garbage-collected
@@ -131,7 +136,28 @@ async def run_sync(triggered_by: str) -> int:
                     f"updated {run.pages_updated}, unchanged {run.pages_unchanged}, removed {run.pages_removed}, "
                     f"failed {run.pages_failed}"
                 )
+            if run.status == "failed":
+                await _alert_admins(run)
             return run.id
+
+
+async def _alert_admins(run: CrawlRun):
+    """Email the admins that a sync failed (at most once per ALERT_EVERY)."""
+    global _last_alert
+    now = datetime.now(timezone.utc)
+    if not settings.admin_emails() or (_last_alert and now - _last_alert < ALERT_EVERY):
+        return
+    _last_alert = now
+    try:
+        await send_admin_alert(
+            "Website sync failed",
+            f"Website sync #{run.id} ({run.triggered_by}) failed:\n\n{run.error}\n\n"
+            "The chatbot keeps answering from the last successful sync. The sync is retried "
+            "automatically; you can also start one from the Website sync panel. "
+            "(At most one such email is sent per day.)",
+        )
+    except Exception:
+        logger.warning("Could not email the admins about the failed sync", exc_info=True)
 
 
 _single_lock = asyncio.Lock()

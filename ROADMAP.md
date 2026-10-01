@@ -408,15 +408,29 @@ Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a6
 
 ## Phase 8: Deployment
 
-- [ ] **8.1** Dockerfile for the backend (download the embedding model at build time) and for the frontend (`npm run build` served by nginx), plus `docker-compose.yml` with postgres + backend + frontend, and volumes for Postgres and Chroma.
-- [ ] **8.2** Run the crawler scheduler in **one** process only: a separate `worker` service, or a DB lock if you run several uvicorn workers.
-- [ ] **8.3** Make `/health` check the DB, Chroma and Groq. Use structured logs. Email the admin when a crawl fails.
-- [ ] **8.4** Daily Postgres backups. Chroma doesn't need backups, since the crawler can rebuild it.
-- [ ] **8.0 Self-hosted LLM on the college DGX server** (decision 2026-10-01; no paid Groq plan). The first deployment uses the Groq API as a stand-in for the DGX endpoint; the user swaps it for the DGX endpoint later.
-  - make the LLM provider configurable in `.env` (API base URL, model name, optional API key), so switching from Groq needs no code change
-  - local LLM servers (vLLM, Ollama, TGI…) usually offer an OpenAI-compatible API, which LangChain's `ChatOpenAI(base_url=...)` can use
-  - re-check the answer-quality questions and the Hindi/Marathi/Hinglish behaviour with the chosen model
-- [ ] **8.5** Hosting: a small VPS or Render/Railway with ≥ 2 GB RAM (the bge-base embedding model needs ~1 GB), HTTPS via the platform or Caddy/nginx + Let's Encrypt.
+- [x] **8.0 Configurable LLM, ready for the college DGX server** (decision 2026-10-01; no paid Groq plan). The first deployment uses the Groq API as a stand-in for the DGX endpoint; the user swaps it later.
+  - `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY` (optional), `LLM_REASONING_EFFORT` in `.env`. Default: Groq's OpenAI-compatible API (`https://api.groq.com/openai/v1`, `openai/gpt-oss-120b`). The old `GROQ_API_KEY` / `GROQ_MODEL` names still work, so existing `.env` files keep working.
+  - `langchain-groq` replaced by `langchain-openai` (`ChatOpenAI(base_url=...)`, plain chat completions), which works with Groq, vLLM, Ollama and TGI.
+  - LLM server down / timeout / 5xx → "The assistant is not available right now…" (`AssistantUnavailable`, HTTP 503 / stream `error`); 429 → the existing "busy" message.
+  - `scripts/check_llm.py` (was `check_groq.py`) tests whichever server is configured.
+  - Verified on Groq through the new client: answers, Hindi→English query translation (2.5 s) and streaming; a Hinglish question streamed 50 pieces and the answer kept its source chip. Reasoning text doesn't leak into answers.
+  - *When the DGX model arrives:* re-run `scripts/eval_answers.py --delay 0` (22 questions incl. Hindi/Marathi/Hinglish), see DEPLOYMENT.md.
+- [x] **8.1 Docker:**
+  - `backend/Dockerfile`: Python 3.12 slim, CPU-only PyTorch, the embedding model baked into the image (`HF_HUB_OFFLINE=1` at runtime), non-root user, `alembic upgrade head` before uvicorn
+  - `frontend/Dockerfile`: `npm run build`, served by **Caddy** (instead of nginx: automatic Let's Encrypt HTTPS). `frontend/Caddyfile` serves the SPA, forwards `/api/*` to the backend with streaming (`flush_interval -1`), adds security headers (microphone allowed for voice input) and long cache for hashed assets.
+  - `docker-compose.yml`: `db` (Postgres 16), `backend`, `web`, `backup`; volumes `pgdata`, `chroma`, `caddy_data`; health checks; root `.env` for the database password and domain, `backend/.env` for the app.
+  - Verified on the dev PC: `docker compose config` passes (and fails clearly without `POSTGRES_PASSWORD`); the `web` image builds; every `backend` build step passes (CPU torch, requirements, model download, non-root user). Saving the backend image failed only because the PC's C: drive ran full, so the first full `docker compose up` test happens on the server.
+- [x] **8.2 Scheduler in one process:** the backend runs as exactly one uvicorn process (no `--workers`; documented: don't scale it). The scheduler, its progress and the rate limits are in memory, so one process is the simple, correct choice for one server.
+- [x] **8.3 Health and alerts:**
+  - `GET /health` checks the database (`SELECT 1`), the knowledge base (chunk count) and the LLM server (`GET <LLM_BASE_URL>/models`, cached 5 minutes, uses no tokens). It returns 503 only for the database or knowledge base; a down LLM is reported but doesn't restart the backend. Docker uses it as the backend health check.
+  - A failed website sync is emailed to `ADMIN_EMAIL`, at most once a day (the scheduler retries every 10 minutes during an outage).
+  - *Structured (JSON) logs: not needed for one server;* `docker compose logs` shows the existing timestamped logs.
+- [x] **8.4 Backups:** the `backup` container writes `backups/college_ai-YYYY-MM-DD.dump` (`pg_dump -Fc`) daily and keeps 14 days. Restore steps and "copy off the server" advice in DEPLOYMENT.md. Chroma isn't backed up (a sync rebuilds it).
+- [ ] **8.5 Hosting** (free; options compared 2026-10-01):
+  - **Now: Oracle Cloud Always Free** ARM VM (2 OCPU / 12 GB since June 2026, 200 GB disk, always on, SMTP 587 works). Needs card verification; Pay As You Go upgrade avoids idle reclaim.
+  - **Final: a college server** next to the DGX LLM (same compose setup; college subdomain or Cloudflare Tunnel).
+  - Ruled out: Render free (512 MB RAM, sleeps, SMTP blocked), Hugging Face Spaces (no persistent disk, sleeps after 48 h, SMTP blocked), Vercel/Netlify (frontend only), Railway/Fly.io (no free tier).
+  - Step-by-step guide: [DEPLOYMENT.md](DEPLOYMENT.md). Free domain: DuckDNS.
 
 **Done when:** the app runs at a public HTTPS URL, survives a restart without losing data, and the crawler updates it on schedule.
 
@@ -438,3 +452,4 @@ Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a6
 | 2026-10-01 | Phase 6 | APSIT Heritage redesign (Stitch concepts), streaming answers, source chips, VITE_API_URL, ESLint, error states; 81/81 API checks |
 | 2026-10-01 | After Phase 6 | Full name instead of username, multilingual answers (Hindi/Marathi/Hinglish), friendly AI rate-limit message; 89/89 checks |
 | 2026-10-01 | Phase 7 | 100 pytest tests, crawler/KB/sync/RAG unit tests, answer-quality script (91% → fixes), ruff + GitHub Actions CI |
+| 2026-10-01 | Phase 8 (8.0–8.4) | LLM configurable (OpenAI-compatible: Groq now, DGX later), Docker + Caddy + compose, /health with DB/KB/LLM, sync-failure emails, daily backups, DEPLOYMENT.md; 109 tests pass. 8.5 hosting: Oracle Cloud Always Free recommended for now |

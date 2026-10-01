@@ -81,7 +81,7 @@ async def test_stream_errors(client, auth_headers):
 
 
 async def test_ai_failures_give_friendly_messages(client, auth_headers):
-    from app.services.rag import AssistantBusy, set_rag_service
+    from app.services.rag import AssistantBusy, AssistantUnavailable, set_rag_service
 
     class Broken:
         async def answer(self, question, history=None):
@@ -91,12 +91,15 @@ async def test_ai_failures_give_friendly_messages(client, auth_headers):
             raise RuntimeError("LLM exploded")
             yield  # makes this an async generator
 
-    class Busy:
+    class Failing:
+        def __init__(self, error):
+            self.error = error
+
         async def answer(self, question, history=None):
-            raise AssistantBusy()
+            raise self.error()
 
         async def stream(self, question, history=None):
-            raise AssistantBusy()
+            raise self.error()
             yield
 
     set_rag_service(Broken())
@@ -106,8 +109,9 @@ async def test_ai_failures_give_friendly_messages(client, auth_headers):
     r = await client.post("/chat-sessions/start", json={"question": "x"}, headers=auth_headers)
     assert r.status_code == 500 and "exploded" not in r.text
 
-    set_rag_service(Busy())
-    r = await client.post("/chat-sessions/start", json={"question": "x"}, headers=auth_headers)
-    assert r.status_code == 503 and "try again in a minute" in r.json()["detail"]
-    r = await client.post("/chat-sessions/start/stream", json={"question": "x"}, headers=auth_headers)
-    assert "try again in a minute" in parse_sse(r.text)[-1][1]["detail"]
+    for error, message in [(AssistantBusy, "try again in a minute"), (AssistantUnavailable, "not available right now")]:
+        set_rag_service(Failing(error))
+        r = await client.post("/chat-sessions/start", json={"question": "x"}, headers=auth_headers)
+        assert r.status_code == 503 and message in r.json()["detail"]
+        r = await client.post("/chat-sessions/start/stream", json={"question": "x"}, headers=auth_headers)
+        assert message in parse_sse(r.text)[-1][1]["detail"]

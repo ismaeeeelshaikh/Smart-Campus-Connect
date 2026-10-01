@@ -75,10 +75,20 @@ async def test_deleted_pages_are_removed_even_when_the_crawl_hits_the_limit(kb, 
     assert kb.sources("web") == {BASE + "/a"}
 
 
-async def test_unreachable_website_is_a_failed_run(kb, monkeypatch):
+async def test_unreachable_website_is_a_failed_run_and_admins_get_one_email(kb, monkeypatch, admin_alerts):
     fake_site(monkeypatch, {})
     await website_sync.run_sync("test")
     assert (await runs())[-1].status == "failed"
+    assert len(admin_alerts) == 1 and "Could not read any page" in admin_alerts[0][1]
+
+    await website_sync.run_sync("schedule")  # the retry 10 minutes later fails too: no second email
+    assert len(admin_alerts) == 1
+
+
+async def test_successful_sync_sends_no_alert(kb, monkeypatch, admin_alerts):
+    fake_site(monkeypatch, {"/a": "Text."})
+    await website_sync.run_sync("test")
+    assert admin_alerts == []
 
 
 async def test_single_page_sync(kb, monkeypatch):

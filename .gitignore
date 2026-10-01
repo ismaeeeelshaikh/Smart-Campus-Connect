@@ -19,6 +19,9 @@ backend/memory_vectorstore/
 # Uploaded files (contain personal data)
 backend/temp_uploads/
 
+# Database backups from docker compose (contain users and chats)
+backups/
+
 # Node / frontend build
 node_modules/
 frontend/dist/
