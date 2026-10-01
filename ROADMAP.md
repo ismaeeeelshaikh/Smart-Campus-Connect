@@ -13,7 +13,7 @@ Tick each box as it's done.
 | 4 ✅ | Live website sync | **Sir's requirement:** changes on apsit.edu.in show up in the chatbot |
 | 5 ✅ | Security hardening | Before real students use it |
 | 6 ✅ | Frontend polish + redesign | Show sources, streaming, remove dead code |
-| 7 | Tests + CI | Keep everything working as we change things |
+| 7 ✅ | Tests + CI | Keep everything working as we change things |
 | 8 | Deployment | Put it online |
 
 ---
@@ -372,17 +372,37 @@ Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a6
   - **Crawler:** faculty cards say "Head of Department (HOD)" (applies at the next sync).
   - **Welcome screen:** says you can ask in English, हिंदी, मराठी or Hinglish.
   - *Verified live:* Hinglish → "Civil department ke HOD Dr. Mugdha Agarwadkar hain…" (chip Civil Faculty); pure Hindi and Marathi now find the HOD, with the name in English letters; Hinglish fees and placements answered in Hinglish.
-- [x] **AI provider rate limit → friendly message.** Groq's free tier allows **8,000 tokens/minute** for `openai/gpt-oss-120b`, and one question uses ~2,300 tokens, so only ~3 questions per minute fit for the whole app. A 429 from Groq now gives "The assistant is getting a lot of questions right now. Please try again in a minute." (HTTP 503 / stream `error` event) instead of a generic error. **Before real use: upgrade the Groq plan** (see Phase 8).
+- [x] **AI provider rate limit → friendly message.** Groq's free tier allows **8,000 tokens/minute** for `openai/gpt-oss-120b`, and one question uses ~2,300 tokens, so only ~3 questions per minute fit for the whole app. A 429 from Groq now gives "The assistant is getting a lot of questions right now. Please try again in a minute." (HTTP 503 / stream `error` event) instead of a generic error. This limit is accepted for development; deployment will use a self-hosted LLM on the college DGX server (Phase 8).
 - *Tests:* 89/89 API checks (+ full name, profile, duplicate names, busy messages); 9/9 source-extraction cases.
 
 ---
 
-## Phase 7: Tests + CI
+## Phase 7: Tests + CI ✅
 
-- [ ] **7.1 Backend tests** with `pytest` + `httpx.AsyncClient` against a test DB: signup/OTP, login, sessions CRUD, admin permissions, and that one user can't read another user's session.
-- [ ] **7.2 Crawler tests** with saved HTML fixtures (e.g. `Information-faculty.html`): the parser finds the HOD, the email decoder works, boilerplate is stripped, and an unchanged page is skipped.
-- [ ] **7.3 Answer-quality check:** 20–30 real questions (HODs, fees, admission, placements, links) with expected facts. Run it after each crawl to catch regressions.
-- [ ] **7.4** `ruff` for Python and `eslint` for React, plus a GitHub Actions workflow that runs lint and tests on every push.
+- [x] **7.1 Backend tests:** `backend/tests/` (pytest + pytest-asyncio + `httpx.ASGITransport`), **100 tests in ~2.5 min**.
+  - **Own database:** `college_ai_test` (or `TEST_DATABASE_URL`) is created and migrated automatically (so every run also tests the migrations on an empty DB). It refuses to run on a database whose name doesn't end in `_test`, and tables are truncated before each test.
+  - **No real email or AI:** email and the AI are stubbed (`FakeRag`), environment variables replace the real mail account and API key, and rate limits are reset per test.
+  - **Covered:**
+    - signup/OTP: domain rule, admin exception, single use, 5-attempt limit, new code cancels old, hashed storage, duplicate names allowed, validation
+    - login, profile (`/auth/me`), password reset (session revocation, single use, same error for unknown emails), rate limits, security headers
+    - chats: lifecycle, history from the DB, rename/delete, 404/401/422, **one student can't read, write, rename or delete another's chat**, streaming, sources saved, friendly errors for AI failure and AI busy
+    - guest chat: limits, nothing saved, streaming; admin permissions (incl. comma-separated admins)
+- [x] **7.2 Crawler, knowledge base and sync tests:**
+  - **Crawler:** URL rules, Cloudflare email decoding, PDF choice (newest first, no student lists), extraction from a **saved real page** (`tests/fixtures/civil-faculty.html`: HOD card sentence, menu/carousel stripped, footer emails), redirects only within the college site, download size limit.
+  - **Knowledge base**, with a tiny fake embedding model (no torch at test time): chunk titles/sections, cite-tag removal, BM25 keyword search, add → unchanged → updated sync, search finds chunks added before a refresh, folder sync add/update/remove.
+  - **Website sync** (crawler faked): incremental update, a page is removed when ≥ 80% of the site was seen, an incomplete crawl removes nothing, 404s are removed even when the page limit is hit, an unreachable site → failed run, single-page sync.
+  - **RAG:** source extraction (incl. Marathi "स्रोत", inferred sources, whole-number matching), language detection, which queries are searched for Devanagari / Hinglish / English questions.
+- [x] **7.3 Answer-quality check:** `python -m scripts.eval_answers` asks 22 real questions (`scripts/eval_questions.json`: all 7 HODs, principal, TPO, experience, qualification, research interests, DTE code, phone, address, exam email, Moodle, recruiters, Hinglish/Hindi/Marathi, an off-topic request) through the running backend and checks facts, script and source links. `--delay` (default 20 s for Groq's free tier), `--only`, `--min-pass`.
+  - *First run:* 20/22. The two failures were a checker bug (a non-breaking space in "Jaya Gupta") and a missing source chip (name written slightly differently). Both were fixed: the checker normalises spaces; inferred sources accept the name's main words and match numbers as whole numbers. *After the fix:* all 9 HOD questions pass.
+- [x] **7.4 Lint + CI:**
+  - **Ruff:** `ruff check .`, configured in `backend/pyproject.toml` (pyflakes, pycodestyle, bugbear). 27 findings fixed: unused imports, whitespace, ambiguous names, `zip(strict=)`.
+  - **ESLint:** `npm run lint` (0 errors).
+  - **GitHub Actions** (`.github/workflows/ci.yml`): backend ruff + pytest against a PostgreSQL 16 service (CPU-only PyTorch to keep installs small), frontend `npm ci` + lint + build, on every push and pull request.
+  - **Dev requirements:** `backend/requirements-dev.txt`.
+- **Side fixes:**
+  - Importing the app dropped from **69 s to ~15 s**: `langchain_groq` (which pulls in `transformers`), chromadb and sentence-transformers are now imported only when the real services start.
+  - Deprecated `datetime.utcnow()`, `declarative_base` import and Pydantic `class Config` replaced.
+  - Alembic `path_separator` set.
 
 ---
 
@@ -392,7 +412,10 @@ Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a6
 - [ ] **8.2** Run the crawler scheduler in **one** process only: a separate `worker` service, or a DB lock if you run several uvicorn workers.
 - [ ] **8.3** Make `/health` check the DB, Chroma and Groq. Use structured logs. Email the admin when a crawl fails.
 - [ ] **8.4** Daily Postgres backups. Chroma doesn't need backups, since the crawler can rebuild it.
-- [ ] **8.0 Groq plan:** the free tier (8,000 tokens/minute ≈ 3 questions/minute for the whole app) is too small for real students. Upgrade (Dev tier) or pick a model with higher limits.
+- [ ] **8.0 Self-hosted LLM on the college DGX server** (decision 2026-10-01; no paid Groq plan). The first deployment uses the Groq API as a stand-in for the DGX endpoint; the user swaps it for the DGX endpoint later.
+  - make the LLM provider configurable in `.env` (API base URL, model name, optional API key), so switching from Groq needs no code change
+  - local LLM servers (vLLM, Ollama, TGI…) usually offer an OpenAI-compatible API, which LangChain's `ChatOpenAI(base_url=...)` can use
+  - re-check the answer-quality questions and the Hindi/Marathi/Hinglish behaviour with the chosen model
 - [ ] **8.5** Hosting: a small VPS or Render/Railway with ≥ 2 GB RAM (the bge-base embedding model needs ~1 GB), HTTPS via the platform or Caddy/nginx + Let's Encrypt.
 
 **Done when:** the app runs at a public HTTPS URL, survives a restart without losing data, and the crawler updates it on schedule.
@@ -414,3 +437,4 @@ Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a6
 | 2026-10-01 | Phase 5 | Rate limits, hashed OTPs with attempt limits, password rules, sessions revoked on password reset, security headers; 70/70 checks pass |
 | 2026-10-01 | Phase 6 | APSIT Heritage redesign (Stitch concepts), streaming answers, source chips, VITE_API_URL, ESLint, error states; 81/81 API checks |
 | 2026-10-01 | After Phase 6 | Full name instead of username, multilingual answers (Hindi/Marathi/Hinglish), friendly AI rate-limit message; 89/89 checks |
+| 2026-10-01 | Phase 7 | 100 pytest tests, crawler/KB/sync/RAG unit tests, answer-quality script (91% → fixes), ruff + GitHub Actions CI |

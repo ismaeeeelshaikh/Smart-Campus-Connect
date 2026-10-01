@@ -1,0 +1,24 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# One event loop for the whole test run: the app's database connection pool lives on it
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+filterwarnings = [
+    "ignore::DeprecationWarning:passlib.*",
+    "ignore::DeprecationWarning:jose.*",
+]
+
+[tool.ruff]
+line-length = 130
+target-version = "py312"
+extend-exclude = ["alembic/versions", "venv"]
+
+[tool.ruff.lint]
+# pyflakes, pycodestyle errors/warnings, bugbear (likely bugs)
+select = ["F", "E", "W", "B"]
+ignore = [
+    "E501",  # long lines: formatting is not enforced
+    "B008",  # FastAPI's Depends(...) in argument defaults is the intended pattern
+    "B904",  # `raise HTTPException(...)` inside `except` without `from`: fine for HTTP errors
+]

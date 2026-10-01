@@ -21,24 +21,24 @@ class AuthService:
             email=user_data.email,
             hashed_password=get_password_hash(user_data.password)
         )
-        
+
         db.add(db_user)
         await db.commit()
         await db.refresh(db_user)
         return db_user
-    
+
     @staticmethod
     async def authenticate_user(email: str, password: str, db: AsyncSession) -> User:
         result = await db.execute(select(User).filter(User.email == email))
         user = result.scalar_one_or_none()
-        
+
         if not user or not verify_password(password, user.hashed_password):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password"
             )
         return user
-    
+
     @staticmethod
     async def get_user_by_email(email: str, db: AsyncSession) -> User:
         result = await db.execute(select(User).filter(User.email == email))

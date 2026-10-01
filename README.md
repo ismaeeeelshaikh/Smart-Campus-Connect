@@ -98,7 +98,7 @@ The UI uses an "APSIT Heritage" design system taken from the college crest: deep
 - **Languages:** ask in English, Hindi, Marathi or Hinglish and the answer comes back in the same language (Hinglish in English letters). Non-English questions are translated into English for the search, because the website data is English. Names, numbers and links stay exactly as on the website.
 - **Profile:** students sign up with their full name (not a unique username) and can change it from the sidebar.
 
-> **Groq limits:** on Groq's free tier, `openai/gpt-oss-120b` allows about 8,000 tokens per minute, roughly 3 questions per minute for the whole app. When that's exceeded, users see "The assistant is getting a lot of questions right now…". Upgrade the Groq plan before real use.
+> **LLM limits (for now):** development uses Groq's free tier, where `openai/gpt-oss-120b` allows about 8,000 tokens per minute (roughly 3 questions per minute for the whole app). When that's exceeded, users see "The assistant is getting a lot of questions right now…". For deployment the plan is a self-hosted LLM on the college DGX server (see ROADMAP Phase 8).
 
 ## Knowledge base
 
@@ -132,6 +132,34 @@ Settings (all optional, in `backend/.env`): `CRAWL_INTERVAL_HOURS` (0 = automati
 ## Guest mode
 
 Visitors without an `@apsit.edu.in` email (future students, parents) can click **Chat as guest** on the login page (or open `/guest`). They can ask the same questions; guest chats are not saved and disappear when the tab is closed.
+
+## Testing
+
+**Automated tests** (backend, ~100 tests, about 2 minutes):
+
+```powershell
+cd backend
+pip install -r requirements-dev.txt
+pytest
+```
+
+- **Separate database:** the tests use `college_ai_test` (your `DATABASE_URL` database name + `_test`, or `TEST_DATABASE_URL`), which is created and migrated automatically. They refuse to run on a database whose name doesn't end in `_test`, so your real data is safe.
+- **No email, no AI:** email sending and the AI are stubbed, so no emails are sent and no Groq calls are made.
+- **What's covered:**
+  - signup/OTP rules, login, profile, password reset, rate limits, security headers
+  - chats (incl. streaming, sources, and that one student can't see another's chats), guest chat, admin endpoints
+  - crawler (on a saved real page), knowledge base, website sync safety rules, RAG source and language handling
+- **Lint:** `ruff check .` (backend), `npm run lint` (frontend)
+
+**Answer quality** (needs the backend running with the real knowledge base and LLM): asks 22 real questions (HODs, principal, fees, contacts, Hindi/Marathi/Hinglish…) and checks the facts:
+
+```powershell
+cd backend
+python -m scripts.eval_answers            # 20 s pause between questions for Groq's free tier
+python -m scripts.eval_answers --delay 0  # with a faster / self-hosted LLM
+```
+
+**CI:** `.github/workflows/ci.yml` runs the backend lint and tests (with a PostgreSQL service) plus the frontend lint and build on every push and pull request.
 
 ## Database migrations
 

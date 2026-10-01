@@ -122,7 +122,7 @@ def _clean_text(text: str) -> str:
         if line and line.lower() not in JUNK_LINES:
             lines.append(line)
     # drop immediate repeats (e.g. a link text followed by the same caption)
-    deduped = [l for i, l in enumerate(lines) if i == 0 or l != lines[i - 1]]
+    deduped = [line for i, line in enumerate(lines) if i == 0 or line != lines[i - 1]]
     return "\n".join(deduped)
 
 

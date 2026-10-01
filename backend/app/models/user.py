@@ -5,7 +5,7 @@ from ..database import Base
 
 class User(Base):
     __tablename__ = "users"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     full_name = Column(String, nullable=False)  # display name; not unique (login is by email)
     email = Column(String, unique=True, index=True, nullable=False)
@@ -13,6 +13,6 @@ class User(Base):
     created_at = Column(DateTime, server_default=func.now())
     # Login tokens issued before this moment are rejected (so a password reset logs out other devices)
     password_changed_at = Column(DateTime(timezone=True), nullable=True)
-    
+
     chat_sessions = relationship("ChatSession", back_populates="user", cascade="all, delete-orphan")
     password_reset_tokens = relationship("PasswordResetToken", back_populates="user", cascade="all, delete-orphan")

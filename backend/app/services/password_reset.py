@@ -7,7 +7,7 @@ from sqlalchemy.future import select
 
 from ..models.user import User
 from ..models.password_reset_token import PasswordResetToken
-from ..utils.security import generate_otp, get_password_hash, hash_otp, otp_matches  # noqa: F401 (generate_otp re-exported)
+from ..utils.security import generate_otp, get_password_hash, hash_otp, otp_matches, utc_now_naive  # noqa: F401 (generate_otp re-exported)
 from .email import send_reset_email  # noqa: F401 (re-exported for routers/password_reset.py)
 
 INVALID_OTP = HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired OTP")
@@ -25,7 +25,7 @@ async def create_password_reset_token(db: AsyncSession, user: User, otp: str):
     token = PasswordResetToken(
         user_id=user.id,
         otp_hash=hash_otp(user.email, otp),
-        expires_at=datetime.utcnow() + timedelta(minutes=OTP_VALID_MINUTES),
+        expires_at=utc_now_naive() + timedelta(minutes=OTP_VALID_MINUTES),
     )
     db.add(token)
     await db.commit()
@@ -43,7 +43,7 @@ async def verify_password_reset_token(db: AsyncSession, email: str, otp: str):
         .filter(
             PasswordResetToken.user_id == user.id,
             PasswordResetToken.used == 0,
-            PasswordResetToken.expires_at > datetime.utcnow(),
+            PasswordResetToken.expires_at > utc_now_naive(),
         )
         .order_by(desc(PasswordResetToken.id)).limit(1)
     )).scalars().first()

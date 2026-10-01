@@ -7,7 +7,9 @@ from typing import AsyncIterator, Optional, Union
 
 from groq import RateLimitError
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_groq import ChatGroq
+
+# langchain_groq is imported in init_rag_service(): it pulls in `transformers`, which takes ~30 s
+# to import, and tests (which use a stub instead of the real LLM) shouldn't wait for that.
 
 from ..config import settings
 from .knowledge_base import KnowledgeBase
@@ -93,7 +95,7 @@ class Answer:
 
 
 class RAGService:
-    def __init__(self, kb: KnowledgeBase, llm: ChatGroq, fast_llm: Optional[ChatGroq] = None):
+    def __init__(self, kb: KnowledgeBase, llm, fast_llm=None):
         self.kb = kb
         self.llm = llm
         self.fast_llm = fast_llm or llm  # used for the quick translation step
@@ -208,18 +210,30 @@ def _infer_sources(text: str, hits: list[dict]) -> list[dict]:
     """When the model cited no page: the best-ranked website pages that really contain a fact from the
     answer (a bold name/term or a 3+ digit number like a fee). Names and numbers stay in English in every
     language, so this also works for Hindi / Marathi / Hinglish answers."""
-    facts = {b.strip().lower().replace(",", "") for b in BOLD_RE.findall(text)}
-    facts |= {n.replace(",", "") for n in NUMBER_RE.findall(text)}
+    def norm(s: str) -> str:  # lower-case, no thousands separators, any kind of space -> " "
+        return " ".join(s.lower().replace(",", "").split())
+
+    facts = {norm(b) for b in BOLD_RE.findall(text)} | {n.replace(",", "") for n in NUMBER_RE.findall(text)}
     facts = {f for f in facts if len(f) >= 3}
     if not facts:
         return []
+
+    def found(fact: str, page_text: str) -> bool:
+        if fact.isdigit():  # a whole number, not part of a longer one ("999" must not match "138999")
+            return re.search(rf"(?<!\d){fact}(?!\d)", page_text) is not None
+        if fact in page_text:
+            return True
+        # "Dr. Shivshankar S Kore" vs "Dr. Shivshankar S. Kore": all longer words present is enough
+        words = [w.strip(".") for w in fact.split() if len(w.strip(".")) >= 3]
+        return len(words) >= 2 and all(w in page_text for w in words)
+
     sources, seen = [], set()
     for hit in hits:  # already sorted best first
         url = hit.get("url")
         if not url or url in seen:
             continue
-        page_text = hit["text"].lower().replace(",", "")
-        if any(f in page_text for f in facts):
+        page_text = norm(hit["text"])
+        if any(found(f, page_text) for f in facts):
             seen.add(url)
             sources.append({"title": hit["title"], "url": url})
             if len(sources) == MAX_INFERRED_SOURCES:
@@ -241,6 +255,8 @@ _service: Optional[RAGService] = None
 
 def init_rag_service() -> RAGService:
     """Load the embedding model, open the index and sync college_data/. Slow: call once at startup."""
+    from langchain_groq import ChatGroq
+
     global _service
     kb = KnowledgeBase(settings.backend_path(settings.chroma_dir), settings.embedding_model)
     stats = kb.sync_folder(settings.backend_path(settings.college_data_dir))

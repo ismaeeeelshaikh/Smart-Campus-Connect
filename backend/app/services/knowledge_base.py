@@ -11,10 +11,10 @@ import re
 from collections import Counter
 from pathlib import Path
 
-import chromadb
-from chromadb.config import Settings as ChromaSettings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from sentence_transformers import SentenceTransformer
+
+# chromadb and sentence-transformers (torch) are imported inside KnowledgeBase.__init__: they take
+# tens of seconds to import, and tests or scripts that only need the helpers below shouldn't pay that.
 
 logger = logging.getLogger(__name__)
 
@@ -43,12 +43,12 @@ def _split_sections(text: str) -> list[tuple[str, str]]:
     for line in text.splitlines():
         match = SECTION_RE.match(line.strip())
         if match:
-            if any(l.strip() for l in lines):
+            if any(line.strip() for line in lines):
                 sections.append((header, "\n".join(lines).strip()))
             header, lines = match.group(1), []
         else:
             lines.append(line)
-    if any(l.strip() for l in lines):
+    if any(line.strip() for line in lines):
         sections.append((header, "\n".join(lines).strip()))
     return sections
 
@@ -96,13 +96,21 @@ def chunk_text(text: str, title: str) -> list[str]:
 
 
 class KnowledgeBase:
-    def __init__(self, persist_dir: Path, embedding_model: str):
-        logger.info(f"Loading embedding model {embedding_model}...")
-        try:
-            # Use the cached copy without contacting huggingface.co on every start
-            self.model = SentenceTransformer(embedding_model, local_files_only=True)
-        except Exception:
-            self.model = SentenceTransformer(embedding_model)  # first run: download it
+    def __init__(self, persist_dir: Path, embedding_model: str, model=None):
+        """`model`: anything with SentenceTransformer's `encode()`; tests pass a small fake one."""
+        import chromadb
+        from chromadb.config import Settings as ChromaSettings
+
+        if model is not None:
+            self.model = model
+        else:
+            from sentence_transformers import SentenceTransformer
+            logger.info(f"Loading embedding model {embedding_model}...")
+            try:
+                # Use the cached copy without contacting huggingface.co on every start
+                self.model = SentenceTransformer(embedding_model, local_files_only=True)
+            except Exception:
+                self.model = SentenceTransformer(embedding_model)  # first run: download it
 
         persist_dir.mkdir(parents=True, exist_ok=True)
         client = chromadb.PersistentClient(
@@ -116,7 +124,7 @@ class KnowledgeBase:
         """Rebuild the in-memory keyword index and chunk cache. Call after changing sources."""
         everything = self.collection.get(include=["documents", "metadatas"])
         chunks = {
-            id_: (doc, meta) for id_, doc, meta in zip(everything["ids"], everything["documents"], everything["metadatas"])
+            id_: (doc, meta) for id_, doc, meta in zip(everything["ids"], everything["documents"], everything["metadatas"], strict=True)
         }
         # One assignment, so a search running in another thread never sees a half-updated pair
         self._index = (chunks, _KeywordIndex(list(chunks), [doc for doc, _ in chunks.values()]))
@@ -196,7 +204,7 @@ class KnowledgeBase:
         missing = [id_ for id_, _ in top if id_ not in chunks]
         if missing:
             got = self.collection.get(ids=missing, include=["documents", "metadatas"])
-            chunks = {**chunks, **{i: (d, m) for i, d, m in zip(got["ids"], got["documents"], got["metadatas"])}}
+            chunks = {**chunks, **{i: (d, m) for i, d, m in zip(got["ids"], got["documents"], got["metadatas"], strict=True)}}
 
         hits = []
         for id_, score in top:

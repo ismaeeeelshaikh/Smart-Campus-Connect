@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime
 from typing import List, Optional
 
@@ -18,9 +18,8 @@ class ChatMessageResponse(BaseModel):
     answer: str
     sources: List[SourceLink] = []
     timestamp: datetime
-    
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)
 
 class ChatSessionCreate(BaseModel):
     title: Optional[str] = "New Chat"
@@ -31,9 +30,8 @@ class ChatSessionResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     message_count: Optional[int] = 0
-    
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)
 
 class ChatSessionDetail(BaseModel):
     id: int
@@ -41,9 +39,8 @@ class ChatSessionDetail(BaseModel):
     created_at: datetime
     updated_at: datetime
     messages: List[ChatMessageResponse]
-    
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)
 
 class ChatSessionList(BaseModel):
     sessions: List[ChatSessionResponse]

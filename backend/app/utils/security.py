@@ -41,6 +41,12 @@ def check_full_name(name: str) -> str:
     return name
 
 
+def utc_now_naive() -> datetime:
+    """Current UTC time without tzinfo, for the OTP tables' plain (UTC) DateTime columns.
+    (Replaces the deprecated datetime.utcnow().)"""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 # ---- One-time passwords ----
 def generate_otp() -> str:
     """6-digit code from a cryptographically secure source (not `random`)."""
