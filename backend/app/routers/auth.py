@@ -1,16 +1,16 @@
 from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel, EmailStr
 from ..database import get_db
 from ..models.user import User
-from ..schemas.user import UserCreate, UserLogin, EmailSchema
+from ..schemas.user import UserCreate, UserLogin, EmailSchema, SignupWithOtp
 from ..services.auth import AuthService
 from ..utils.security import create_access_token
 from ..config import settings
 from ..services.signup_otp import generate_and_store_otp, verify_otp, delete_otps
 from ..services.email import send_otp_email
+from ..utils.rate_limit import client_ip, enforce
 import logging
 
 logger = logging.getLogger(__name__)
@@ -28,8 +28,10 @@ def _check_signup_domain(email: str):
 
 
 @router.post("/login")
-async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
+async def login(user_data: UserLogin, request: Request, db: AsyncSession = Depends(get_db)):
     email = user_data.email.lower()
+    enforce("login:ip", client_ip(request))
+    enforce("login:email", email)
     logger.info(f"Login attempt for email: {email}")
     user = await AuthService.authenticate_user(email, user_data.password, db)
     access_token = create_access_token(
@@ -39,22 +41,19 @@ async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user": {"id": user.id, "username": user.username, "email": user.email},
+        "user": {"id": user.id, "username": user.username, "email": user.email,
+                 "is_admin": settings.is_admin(user.email)},
     }
 
 
 # ---- Signup with email OTP ----
-class SignupWithOtp(BaseModel):
-    username: str
-    email: EmailStr
-    password: str
-    otp: str
-
-
 @router.post("/request-signup-otp")
-async def request_signup_otp(payload: EmailSchema, db: AsyncSession = Depends(get_db)):
+async def request_signup_otp(payload: EmailSchema, request: Request, db: AsyncSession = Depends(get_db)):
     email = payload.email.lower()
     _check_signup_domain(email)
+    # Stops anyone from flooding an inbox (or our sending Gmail) with OTP emails
+    enforce("signup_otp:ip", client_ip(request))
+    enforce("signup_otp:email", email)
 
     existing = await db.execute(select(User).filter(User.email == email))
     if existing.scalar_one_or_none():
@@ -79,12 +78,13 @@ async def request_signup_otp(payload: EmailSchema, db: AsyncSession = Depends(ge
 async def complete_signup(data: SignupWithOtp, db: AsyncSession = Depends(get_db)):
     email = data.email.lower()
     _check_signup_domain(email)
+    enforce("complete_signup:email", email)
 
-    if not await verify_otp(email, data.otp.strip(), db):
+    if not await verify_otp(email, data.otp, db):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired OTP")
 
     user = await AuthService.create_user(
-        UserCreate(username=data.username.strip(), email=email, password=data.password), db
+        UserCreate(username=data.username, email=email, password=data.password), db
     )
     await delete_otps(email, db)  # an OTP must not be reusable
     logger.info(f"User created via OTP signup: {user.id}")

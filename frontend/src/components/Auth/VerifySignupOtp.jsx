@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useLocation, useNavigate, Link, Navigate } from 'react-router-dom';
+import { apiErrorMessage } from '../../services/validation';
 
 const VerifySignupOtp = () => {
   const location = useLocation();
@@ -35,7 +36,7 @@ const VerifySignupOtp = () => {
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(typeof data.detail === 'string' ? data.detail : 'OTP verification failed');
+        throw new Error(apiErrorMessage({ response: { data } }, 'OTP verification failed'));
       }
 
       // On success go to login, which shows a confirmation message

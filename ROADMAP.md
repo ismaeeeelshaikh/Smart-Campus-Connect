@@ -10,8 +10,8 @@ Tick each box as it's done.
 | 1 | Clean repo + reproducible setup | Every later change needs a project that installs and runs from scratch |
 | 2 | Fix broken features | Signup and some endpoints are broken today |
 | 3 ✅ | Fix the RAG core + guest mode | Needed before adding live data, or the crawler has nowhere good to put it. Guest mode needs the new history handling. |
-| 4 | Live website sync | **Sir's requirement:** changes on apsit.edu.in show up in the chatbot |
-| 5 | Security hardening | Before real students use it |
+| 4 ✅ | Live website sync | **Sir's requirement:** changes on apsit.edu.in show up in the chatbot |
+| 5 ✅ | Security hardening | Before real students use it |
 | 6 | Frontend polish | Show sources, streaming, remove dead code |
 | 7 | Tests + CI | Keep everything working as we change things |
 | 8 | Deployment | Put it online |
@@ -155,7 +155,7 @@ Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a6
 
 ---
 
-## Phase 4: Live website sync (sir's requirement)
+## Phase 4: Live website sync (sir's requirement) ✅
 
 **Goal:** when anything changes on https://www.apsit.edu.in, the chatbot's answer changes too, at the next scheduled crawl or immediately when an admin presses **Refresh**.
 
@@ -170,58 +170,140 @@ Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a6
 - **Boilerplate:** a carousel ("Convocation Ceremony @APSIT…") and the footer repeat on every page and must be stripped.
 - **Proof the old data is stale:** the scraped files say 20 and 23 years of experience for the IT and Humanities HODs; the live site says 21 and 24.
 
-### Steps
-- [ ] **4.1 Crawler** (`app/services/crawler.py`):
-  - async `httpx` with browser headers
-  - breadth-first crawl of `www.apsit.edu.in` starting from `/` and `/rss.xml`
-  - normalise URLs (drop `/index.php/` and `#fragment`)
-  - skip images, video and zip files
-  - 0.5 s delay between requests
-  - `max_pages` limit
-  - retry with back-off on errors
-- [ ] **4.2 Extractors:**
-  - *Faculty-card extractor:* turn each card into one sentence, e.g. "Dr. Kiran B. Deshpande is the Head of Department of Information Technology (PhD, 21 years experience)."
-  - *Generic extractor:* page text without nav, header, footer or carousel.
-  - *Email decoder* for Cloudflare-protected addresses.
-- [ ] **4.3 Page state table** `crawled_pages(url, title, content_hash, last_crawled, last_changed, status)`, with an Alembic migration.
-- [ ] **4.4 Incremental sync:**
-  - hash unchanged → skip
-  - hash changed → delete that URL's chunks in Chroma and add the new ones
-  - page gone → delete its chunks, **but only if the crawl finished normally** (e.g. reached ≥ 80% of the last crawl's page count), so a network failure can't wipe the knowledge base
-- [ ] **4.5 PDFs:** extract text from linked PDFs under `/sites/default/files/` with `pypdf`, with a size limit. Scanned PDFs and poster images would need OCR; leave that out of scope for now and document it.
-- [ ] **4.6 Scheduler:** APScheduler started in `lifespan`, every `crawl_interval_hours` (default 6), with a lock so two crawls never overlap.
-- [ ] **4.7 Admin API:**
-  - admin = the user whose email matches `settings.admin_email`
-  - `POST /admin/reindex` starts a crawl in the background
-  - `GET /admin/crawl-status` returns the last run time, pages seen / changed / failed, and whether a crawl is running
-- [ ] **4.8 Admin UI:** a **Refresh website data** button plus "last synced" time, visible only to the admin.
-- [ ] **4.9 Manual data:** keep `college_data/*.txt` for information that isn't on the website, with source `manual:<file>`. Remove anything the crawler now covers (the faculty files) so old data can't contradict live data.
+### More facts found while building it (2026-10-01)
+- **Size:** about 1,015 content pages plus ~340 linked PDFs.
+  - **`/node/<id>` pages (~500):** events and webinars with dates, committee members and newsletters.
+  - **~150 faculty profile pages:** interests, publications, roles.
+  - **~150 pages** have almost no text.
+- **Page content** is in `.region-content` on every page. The header, menu (2.3k characters), carousel, sidebars and footer repeat everywhere.
+- **Some pages return HTTP 403** to every request (e.g. `/virtusa`, `/ayrus-academy-excellence-centre`). They're blocked by the site itself, not by us.
+- **The site is inconsistent about the principal's email:** the principal page (`/node/41`) says `principal@apsit.edu.in`, the footer says `principal@apsit.org.in`.
 
-**Done when (demo script for sir):**
-1. Ask "Who is the HOD of IT?" and get the live answer with a link to `/Information-faculty`.
-2. Sir changes a page on the website.
-3. Press **Refresh** and wait for the status to show "changed: 1".
-4. Ask again. The answer shows the new information and the new "updated on" time.
+### Steps
+- [x] **4.1 Crawler** (`app/services/crawler.py`):
+  - async `httpx` with browser headers
+  - breadth-first crawl from `/` following every link, with 0.5 s between requests
+  - URL normalisation (drops `/index.php`, `#fragment` and trailing `/`, keeps only `?page=`; other sites, images, `/user`, `/cdn-cgi` and similar are skipped)
+  - duplicate pages (same text under two URLs) are indexed once
+  - **downloads are streamed**, with a size cap (8 MB) and a 90 s time limit, plus 3 retries with back-off
+- [x] **4.2 Extractors:**
+  - text only from `.region-content`
+  - **listing cards → one line each**, e.g. `Dr. Mugdha Agarwadkar | department: Civil Engineering | designation: Head of Department | qualification: PhD | experience: 17 years | profile: …`
+  - Cloudflare-hidden emails decoded
+  - footer contact details indexed **once** as their own document (`/#contact`)
+  - links to PDFs are kept in the page text with their URL, so the bot can point to documents it hasn't read
+- [x] **4.3 Tables:**
+  - `crawled_pages`: url, title, kind, status, first_seen / last_crawled / last_changed
+  - `crawl_runs`: status and counters for each sync
+  - timezone-aware timestamps; migration `a57c0199b0e2`
+- [x] **4.4 Incremental sync** (`app/services/website_sync.py`):
+  - only pages whose text hash changed are re-embedded
+  - 404s are removed
+  - pages that weren't visited are removed **only if** the crawl didn't hit the page limit and reached ≥ 80% of the previous run
+  - a sync that reads 0 pages is marked failed and removes nothing
+  - one sync at a time (lock)
+  - runs cut off by a restart are marked "interrupted" at startup
+- [x] **4.5 PDFs:**
+  - content of the **60 newest** PDFs (by Drupal's `/files/YYYY-MM/` folder), first 25 pages / 40k characters each
+  - scanned PDFs (no text) are skipped
+  - **merit lists / student lists are never read** (filename filter), to protect students' personal data
+- [x] **4.6 Scheduler:**
+  - an asyncio background task (no extra dependency) checks every 10 min and syncs when the last success is older than `CRAWL_INTERVAL_HOURS` (default 6; 0 = off)
+  - the first sync starts ~15 s after the very first startup
+- [x] **4.7 Admin API** (admins = `ADMIN_EMAIL`, comma-separated):
+  - `POST /admin/website-sync` starts a full sync in the background (409 if one is running)
+  - `GET /admin/website-sync` returns progress, last run, pages indexed and the 10 most recently changed pages
+  - `POST /admin/website-sync/page {url}` **re-reads one page in seconds** (the demo button)
+  - non-admins get 403
+  - the login response includes `is_admin`
+- [x] **4.8 Admin UI:** a **"Website sync"** button in the header, for admins only. It opens a panel with:
+  - **Sync now**, with live progress
+  - **Update one page** (paste a URL)
+  - the last result
+  - recently changed pages (with links)
+- [x] **4.9 Manual data:**
+  - deleted `faculty_all_departments.txt` (stale; all 7 faculty pages are now read live)
+  - removed the "Department Leadership" lines from `IT_Teachers.txt` (stale, and they contained the HOD's personal mobile number); its teaching assignments stay because they're not on the website
+  - context entries are labelled "official APSIT website page: <url>" or "college data file", and the prompt says **the website wins** when they disagree
+  - answers end with "Source:" links to the pages used; `【1】`-style markers are stripped
+
+**Verified on 2026-10-01:**
+- **First full sync:** 1,046 pages/PDFs, 1,001 indexed, 36 failed (the 403 pages), 2,591 chunks. It took ~45 min of crawling + embedding; a 72-min pause in the log was the laptop sleeping.
+- **Re-sync:** the same pages found **unchanged in 39 s** with nothing re-embedded.
+- **Responsiveness:** chat answered in ~1.5 s *while* a sync was running.
+- **Simulated demo:**
+  - the index held an "old website" version of `/tpo` → the bot said "Prof. Test Person"
+  - admin "Update one page" → `updated`
+  - the bot then said "**Prof. Sushrut Patankar**" with the source link, and the panel listed `/tpo` as recently changed
+- **Live data:**
+  - the Civil HOD is now correct (PhD, 17 years; was "36 years, pursuing PhD")
+  - the IT HOD shows 21 years
+  - the principal **Dr. Uttam D. Kolekar** is found (the old data didn't have it)
+  - CAP-vacancy admission dates come from the home page
+  - faculty research interests and events with dates are answered
+- **API:** 49/49 checks pass (earlier phases + admin permissions + crawler unit checks).
+
+**Demo script for sir:**
+1. Log in with an admin account and ask: "Who is the HOD of Civil Engineering?" The answer shows the live data and a link to `/civil-faculty`.
+2. Sir edits a page on apsit.edu.in, for example a faculty card.
+3. Open **Website sync** → paste that page's link into **Update one page** → it says "Changes found and updated".
+4. Ask again. The answer shows the new information. (Without pressing anything, the automatic sync picks the change up within 6 hours.)
+
+**Known limits / later:**
+- **The "Source:" line is written by the AI,** so it can occasionally cite a related page instead of the exact one → **6.1** builds the source list from retrieval results instead.
+- **Scanned PDFs and text inside images** aren't read (that would need OCR).
+- **A full sync takes ~20 min of polite crawling** even when nothing changed. That's fine every 6 h; a smarter order (recently changed pages first) could come later.
 
 ---
 
-## Phase 5: Security hardening
+## Phase 5: Security hardening ✅
 
-- [ ] **5.1** Rate limiting with `slowapi` on login, OTP request, OTP verify and password reset. For example, at most 5 OTP requests per email per hour, which also stops someone from spamming your sending Gmail. Chat (logged-in and guest) is **not** limited, by decision on 2026-10-01.
-- [ ] **5.2 OTPs:**
-  - generate with `secrets` instead of `random`
-  - store a **hash** of the OTP, not the plain code
-  - allow at most 5 wrong attempts, then invalidate
-  - allow only one active reset OTP per user
-- [ ] **5.3** Validation in the schemas: minimum password length (8), username pattern, maximum question length (e.g. 1000 characters).
-- [ ] **5.4 JWT:**
-  - use timezone-aware expiry times (`datetime.utcnow()` is deprecated)
-  - put an `is_admin` claim or check in a dependency
-  - frontend: on 401, clear the session and send the user to login without a redirect loop
-- [ ] **5.5** Read CORS origins from settings. Add basic security headers.
-- [ ] **5.6** Keep `/docs` (Swagger) only in development, or protect it.
+- [x] **5.1 Rate limits** (`app/utils/rate_limit.py`, in memory, no extra package):
+  - **Login:** 10 tries per email and 20 per IP, per 15 min.
+  - **Signup OTP request:** 3 per email per 15 min, 10 per IP per hour.
+  - **OTP verify:** 10 per email per 15 min.
+  - **Reset OTP request:** 3 per email per 15 min, 10 per IP per hour.
+  - **Reset verify:** 10 per email per 15 min.
+  - Over the limit → **429** "Too many attempts. Please try again in N minutes." with a `Retry-After` header.
+  - **Chat (logged-in and guest) is not limited** (decision 2026-10-01).
+  - Behind a reverse proxy set `TRUST_PROXY_HEADERS=true` so the real client IP is used.
+  - Limits reset on restart and aren't shared between several worker processes (see Phase 8).
+- [x] **5.2 OTPs:**
+  - generated with `secrets` (not `random`)
+  - stored only as an **HMAC hash** with the server secret, so a leaked database can't be brute-forced
+  - **5 wrong guesses kill the code**
+  - requesting a new code cancels the old one (signup and reset)
+  - a reset code can't be used twice
+  - migration `61b787cb4910` deleted the old plain-text OTP rows
+- [x] **5.3 Validation:**
+  - **new passwords:** 8-128 characters with an uppercase letter, a lowercase letter and a number (same rule in the backend schemas and the frontend, `services/validation.js`)
+  - **usernames:** 3-30 of letters, numbers, `.` `_` `-`
+  - **OTP:** exactly 6 digits
+  - **size limits:** login password ≤ 128 characters (stops huge inputs that are slow to hash); guest history ≤ 50 turns; questions ≤ 4000 characters
+- [x] **5.4 JWT:**
+  - timezone-aware expiry, plus an `iat` (issued-at) claim
+  - **a password reset logs out every other session:** `users.password_changed_at` makes older tokens invalid
+  - admin check in a dependency (done in Phase 4)
+  - a 401 on login no longer reloads the page (done in Phase 2)
+- [x] **5.5 Security headers on every API response:** `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`. CORS origins come from settings (done in Phase 1). HSTS/HTTPS belongs to the web server in **Phase 8**.
+- [x] **5.6** `/docs`, `/redoc` and `/openapi.json` can be turned off with `ENABLE_DOCS=false`. Keep them on in development; turn them off in production.
+- [x] **5.7 Crawler can't be redirected away:** redirects are followed by hand, only within `www.apsit.edu.in`, so a redirect can't make the server request another site or an internal address (SSRF) or index foreign content.
 
-**Done when:** brute-forcing an OTP or spamming login gets a 429, and no secret or stack trace ever reaches the browser.
+**Verified on 2026-10-01:**
+- **70/70 API checks pass**, including all the new ones:
+  - OTP stored hashed
+  - after 5 wrong OTPs even the right one fails
+  - a new OTP cancels the old one
+  - weak password / bad username / non-numeric OTP → 422
+  - the 11th login try → 429 while another email can still log in
+  - the 4th OTP request → 429
+  - **old token → 401 after a password reset**, new token works
+  - reset OTP single-use
+  - security headers present
+  - an off-site redirect is not followed
+- **Live server:** headers present; the user's `@apsit.edu.in` account is admin.
+
+**Lesson:** `uvicorn --reload` on Windows got stuck after a `.env` change (the old process kept running), so run the backend without `--reload` and restart it after editing `.env`.
 
 ---
 
@@ -268,3 +350,5 @@ Current state of the migration chain `d5da47b3c6e1 → df824e25ef7a → ead537a6
 | 2026-10-01 | Phase 2 | Broken features fixed, college-email-only signup; 28/28 API checks pass |
 | 2026-10-01 | Plan change | Added 3.10 guest mode for newcomers, with no chat limits (Groq credits handled separately) |
 | 2026-10-01 | Phase 3 | Async RAG, persistent hybrid-search index, DB history, new prompt, guest mode; 36/36 API checks pass |
+| 2026-10-01 | Phase 4 | Live website sync: crawler, incremental index, scheduler, admin panel + single-page update; 1,046 pages indexed; 49/49 checks + demo pass |
+| 2026-10-01 | Phase 5 | Rate limits, hashed OTPs with attempt limits, password rules, sessions revoked on password reset, security headers; 70/70 checks pass |

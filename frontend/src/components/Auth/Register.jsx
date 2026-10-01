@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { PASSWORD_REGEX, PASSWORD_RULE, USERNAME_REGEX, USERNAME_RULE } from '../../services/validation';
 
 const Register = () => {
   const [formData, setFormData] = useState({
@@ -40,18 +41,15 @@ const Register = () => {
       return;
     }
 
-    // Validate username length
-    if (formData.username.length < 3) {
-      alert('Username must be at least 3 characters long.');
-      setError('Username must be at least 3 characters long.');
+    // Same rules as the backend (app/utils/security.py)
+    if (!USERNAME_REGEX.test(formData.username.trim())) {
+      alert(USERNAME_RULE);
+      setError(USERNAME_RULE);
       return;
     }
-
-    // Validate password complexity (min 6 chars, uppercase, lowercase, digit)
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{6,}$/;
-    if (!passwordRegex.test(formData.password)) {
-      alert('Password must be at least 6 characters long and include uppercase, lowercase letters, and a number.');
-      setError('Password must include uppercase, lowercase, and a number, and be at least 6 characters long.');
+    if (!PASSWORD_REGEX.test(formData.password)) {
+      alert(PASSWORD_RULE);
+      setError(PASSWORD_RULE);
       return;
     }
 
@@ -159,7 +157,7 @@ const Register = () => {
                 required
                 disabled={loading}
                 className="w-full px-3 py-2 rounded-md bg-background-dark border border-gray-700 placeholder-gray-400 text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-primary-600 transition disabled:bg-gray-800"
-                placeholder="Password (min 6 characters)"
+                placeholder="Password (min 8 characters)"
                 value={formData.password}
                 onChange={handleChange}
                 minLength="6"

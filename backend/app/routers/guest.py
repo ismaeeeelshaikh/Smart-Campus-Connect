@@ -10,14 +10,14 @@ router = APIRouter(prefix="/guest", tags=["guest"])
 
 
 class GuestTurn(BaseModel):
-    question: str
-    answer: str
+    question: str = Field(max_length=4000)
+    answer: str = Field(max_length=20000)
 
 
 class GuestChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
     # Earlier turns of this conversation, kept by the browser (only the last few are used)
-    history: list[GuestTurn] = []
+    history: list[GuestTurn] = Field(default=[], max_length=50)
 
 
 class GuestChatResponse(BaseModel):

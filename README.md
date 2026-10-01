@@ -56,8 +56,10 @@ python -m scripts.check_groq
 Start the API:
 
 ```powershell
-uvicorn app.main:app --reload
+uvicorn app.main:app
 ```
+
+After editing `backend/.env`, stop the backend (Ctrl+C) and start it again. (`--reload` is avoided on purpose: on Windows it sometimes gets stuck and keeps running the old code and settings.)
 
 - API: http://127.0.0.1:8000
 - Interactive API docs: http://127.0.0.1:8000/docs
@@ -86,7 +88,24 @@ The chatbot answers from the text files in `backend/college_data/`, indexed into
 
 Search is hybrid. Meaning-based (vector) search is combined with keyword search, so exact terms like "DTE code", names and abbreviations are found too.
 
-Phase 4 of the roadmap adds an automatic crawler, so changes on apsit.edu.in reach the chatbot without editing files.
+Use these files only for information that is **not** on the college website. Everything on the website is read automatically (next section), and website information wins when the two disagree.
+
+## Live sync with apsit.edu.in
+
+The backend keeps its knowledge in sync with https://www.apsit.edu.in, so changes made on the college website reach the chatbot without anyone editing files.
+
+- **Automatic:** every `CRAWL_INTERVAL_HOURS` (default 6) the whole site is crawled. Only pages whose text changed are re-indexed, and deleted pages are removed. The first full sync takes about 40 minutes (1,300+ pages plus the 60 newest PDFs); later syncs mostly re-check pages and re-index only what changed.
+- **What is read:**
+  - the main content of every page, without the menu, sidebar or footer
+  - faculty cards (one line per person)
+  - contact details, with Cloudflare-hidden emails decoded
+  - the text of the newest PDFs, skipping merit lists and student lists, which contain personal data
+- **Admins** (emails in `ADMIN_EMAIL`, comma-separated) see a **Website sync** button in the header. It has:
+  - **Sync now:** a full sync in the background, with live progress, the last result and recently changed pages
+  - **Update one page:** paste the link of a page that was just edited, and it's re-read in a few seconds
+- **Answers cite their sources:** when an answer uses website content, it ends with "Source:" and the page link.
+
+Settings (all optional, in `backend/.env`): `CRAWL_INTERVAL_HOURS` (0 = automatic sync off), `CRAWL_MAX_PAGES`, `CRAWL_DELAY_SECONDS`, `CRAWL_INCLUDE_PDFS`, `CRAWL_MAX_PDFS`.
 
 ## Guest mode
 
@@ -113,7 +132,8 @@ backend/
     database.py       async SQLAlchemy engine + session
     models/           database tables
     routers/          API endpoints (auth, chat sessions, guest chat, password reset)
-    services/         business logic (auth, OTP, email, knowledge base, RAG)
+    services/         business logic (auth, OTP, email, knowledge base, RAG,
+                      website crawler + sync)
     schemas/          request/response models
   alembic/            database migrations
   college_data/       knowledge base text files
@@ -129,3 +149,10 @@ frontend/
 
 - Never commit `backend/.env`. It is git-ignored; `backend/.env.example` lists the keys without values.
 - `JWT_SECRET` should be long and random: `python -c "import secrets; print(secrets.token_urlsafe(48))"`
+- **Signup** is limited to `ALLOWED_SIGNUP_DOMAINS` (default `apsit.edu.in`) and needs an emailed OTP.
+- **OTPs** are 6 random digits (`secrets`), stored only as an HMAC hash, valid 10–15 minutes, and stop working after 5 wrong guesses. Requesting a new code cancels the old one.
+- **Passwords:** 8–128 characters with uppercase, lowercase and a number; hashed with argon2. A password reset logs out every other session.
+- **Rate limits:** too many login, OTP or password-reset requests get `429 Too many attempts` (per email and per IP). Chat is not rate-limited.
+- **API responses** carry security headers (`nosniff`, `X-Frame-Options: DENY`, ...).
+- **In production:** set `ENABLE_DOCS=false`. Set `TRUST_PROXY_HEADERS=true` only behind a reverse proxy.
+- **The website crawler** only follows redirects within `www.apsit.edu.in`.

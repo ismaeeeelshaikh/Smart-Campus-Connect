@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from ..schemas.password_reset import PasswordResetRequest, PasswordResetVerify, PasswordResetResponse
@@ -12,6 +12,7 @@ from ..services.password_reset import (
 )
 from ..database import get_db
 from ..models.user import User
+from ..utils.rate_limit import client_ip, enforce
 import logging
 
 logger = logging.getLogger(__name__)
@@ -19,8 +20,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/password-reset", tags=["Password Reset"])
 
 @router.post("/request-reset", response_model=PasswordResetResponse)
-async def request_password_reset(payload: PasswordResetRequest, db: AsyncSession = Depends(get_db)):
+async def request_password_reset(payload: PasswordResetRequest, request: Request, db: AsyncSession = Depends(get_db)):
     email = payload.email.lower()
+    enforce("reset_request:ip", client_ip(request))
+    enforce("reset_request:email", email)
     result = await db.execute(select(User).filter(User.email == email))
     user = result.scalars().first()
     if not user:
@@ -42,6 +45,7 @@ async def request_password_reset(payload: PasswordResetRequest, db: AsyncSession
 
 @router.post("/reset-password", response_model=PasswordResetResponse)
 async def reset_password(payload: PasswordResetVerify, db: AsyncSession = Depends(get_db)):
+    enforce("reset_password:email", payload.email.lower())
     user, token = await verify_password_reset_token(db, payload.email.lower(), payload.otp)
     await update_user_password(db, user, payload.new_password)
     await mark_token_used(db, token)

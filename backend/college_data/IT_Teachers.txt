@@ -1,9 +1,5 @@
 ﻿APSIT INFORMATION TECHNOLOGY DEPARTMENT: FACULTY AND SUBJECTS
 
-=== DEPARTMENT LEADERSHIP ===
-Head of Department (HOD): Dr. Kiran Deshpande. Contact: 8369862997
-Dean Administration: Dr. Sameer Nanivadekar
-
 === FACULTY TEACHING ASSIGNMENTS ===
 
 Prof. Anupama Singh teaches Semester 3: ADSAL (Data Structure and Analysis Lab) and Semester 5: ADSA (Advanced Data Structures and Analysis).

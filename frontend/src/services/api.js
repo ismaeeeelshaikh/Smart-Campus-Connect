@@ -41,6 +41,13 @@ export const guestAPI = {
   chat: (question, history) => api.post('/guest/chat', { question, history }),
 };
 
+// Admins only: keep the chatbot in sync with apsit.edu.in
+export const adminAPI = {
+  startWebsiteSync: () => api.post('/admin/website-sync'),
+  websiteSyncStatus: () => api.get('/admin/website-sync'),
+  syncOnePage: (url) => api.post('/admin/website-sync/page', { url }),
+};
+
 export const chatSessionAPI = {
   // Chat session management
   createSession: (title) => api.post('/chat-sessions', { title }),

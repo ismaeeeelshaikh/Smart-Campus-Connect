@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { resetPassword } from "../../services/auth";
+import { PASSWORD_REGEX, PASSWORD_RULE, apiErrorMessage } from "../../services/validation";
 
 export default function ResetPassword() {
   const location = useLocation();
@@ -15,17 +16,15 @@ export default function ResetPassword() {
     e.preventDefault();
     setMessage("");
     setError("");
+    if (!PASSWORD_REGEX.test(newPassword)) {
+      setError(PASSWORD_RULE);
+      return;
+    }
     try {
-      await resetPassword(email, otp, newPassword);
+      await resetPassword(email, otp.trim(), newPassword);
       setMessage("Password updated successfully. Please login.");
     } catch (err) {
-      const detail = err.response?.data?.detail;
-      // 422 validation errors come back as a list; show the first message
-      setError(
-        (typeof detail === "string" && detail) ||
-        (Array.isArray(detail) && detail[0]?.msg) ||
-        "Invalid OTP or error resetting password."
-      );
+      setError(apiErrorMessage(err, "Invalid OTP or error resetting password."));
     }
   };
 

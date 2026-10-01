@@ -115,14 +115,15 @@ class KnowledgeBase:
     def refresh_keyword_index(self):
         """Rebuild the in-memory keyword index and chunk cache. Call after changing sources."""
         everything = self.collection.get(include=["documents", "metadatas"])
-        self._chunks = {
+        chunks = {
             id_: (doc, meta) for id_, doc, meta in zip(everything["ids"], everything["documents"], everything["metadatas"])
         }
-        self._keyword = _KeywordIndex(list(self._chunks), [doc for doc, _ in self._chunks.values()])
+        # One assignment, so a search running in another thread never sees a half-updated pair
+        self._index = (chunks, _KeywordIndex(list(chunks), [doc for doc, _ in chunks.values()]))
 
     # ---- embeddings ----
     def _embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return self.model.encode(texts, normalize_embeddings=True, batch_size=32).tolist()
+        return self.model.encode(texts, normalize_embeddings=True, batch_size=8).tolist()
 
     def _embed_query(self, text: str) -> list[float]:
         return self.model.encode(BGE_QUERY_PREFIX + text, normalize_embeddings=True).tolist()
@@ -177,22 +178,33 @@ class KnowledgeBase:
     # ---- reading ----
     def search(self, query: str, k: int = 6) -> list[dict]:
         """Hybrid search: vector (meaning) + keyword (exact terms), merged with reciprocal rank fusion."""
-        if not self._chunks:
+        chunks, keyword = self._index
+        total = self.collection.count()
+        if total == 0:
             return []
-        n = min(k * 2, len(self._chunks))
+        n = min(k * 2, total)
         vector = self.collection.query(query_embeddings=[self._embed_query(query)], n_results=n, include=[])
-        rankings = [vector["ids"][0], self._keyword.search(query, n)]
+        rankings = [vector["ids"][0], keyword.search(query, n)]
 
         fused: dict[str, float] = {}
         for ranking in rankings:
             for rank, id_ in enumerate(ranking):
                 fused[id_] = fused.get(id_, 0.0) + 1 / (60 + rank)
+        top = sorted(fused.items(), key=lambda x: x[1], reverse=True)[:k]
+
+        # Chunks added by a sync that's still running aren't in the cache yet: read them directly
+        missing = [id_ for id_, _ in top if id_ not in chunks]
+        if missing:
+            got = self.collection.get(ids=missing, include=["documents", "metadatas"])
+            chunks = {**chunks, **{i: (d, m) for i, d, m in zip(got["ids"], got["documents"], got["metadatas"])}}
 
         hits = []
-        for id_, score in sorted(fused.items(), key=lambda x: x[1], reverse=True)[:k]:
-            doc, meta = self._chunks[id_]
+        for id_, score in top:
+            if id_ not in chunks:  # deleted since the cache was built
+                continue
+            doc, meta = chunks[id_]
             hits.append({"id": id_, "text": doc, "title": meta["title"], "url": meta.get("url", ""),
-                         "source": meta["source"], "score": score})
+                         "kind": meta.get("kind", ""), "source": meta["source"], "score": score})
         return hits
 
 

@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { LogIn, LogOut, User } from 'lucide-react';
+import WebsiteSyncPanel from '../Admin/WebsiteSyncPanel';
 
 // `guest`: header for the public guest chat (shows "Sign in" instead of the user and "Logout")
 const Header = ({ guest = false }) => {
@@ -65,6 +66,7 @@ const Header = ({ guest = false }) => {
             </div>
           ) : (
           <div className="flex items-center space-x-4">
+            {user?.is_admin && <WebsiteSyncPanel />}
             <div className="flex items-center space-x-2 text-gray-300">
               <User className="h-4 w-4" />
               <span className="text-sm font-medium">

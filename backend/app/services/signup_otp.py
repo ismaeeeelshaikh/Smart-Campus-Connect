@@ -1,38 +1,42 @@
-import random
 from datetime import datetime, timedelta
 from sqlalchemy.future import select
-from sqlalchemy import delete
+from sqlalchemy import delete, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..models.signup_otp_token import SignupOtpToken
+from ..utils.security import generate_otp, hash_otp, otp_matches
 
-def generate_random_otp(length=6):
-    return ''.join([str(random.randint(0, 9)) for _ in range(length)])
+OTP_VALID_MINUTES = 10
+MAX_OTP_ATTEMPTS = 5  # after this many wrong guesses the code stops working
+
 
 async def generate_and_store_otp(email: str, db: AsyncSession) -> str:
-    otp = generate_random_otp()
-    expires_at = datetime.utcnow() + timedelta(minutes=10)
-
-    # Remove existing OTPs for the email to avoid multiple valid ones
+    """Create a new code for `email` (replacing any older one) and return it, to be emailed."""
+    otp = generate_otp()
     await db.execute(delete(SignupOtpToken).where(SignupOtpToken.email == email))
-
-    token = SignupOtpToken(email=email, otp=otp, expires_at=expires_at)
-    db.add(token)
+    db.add(SignupOtpToken(
+        email=email,
+        otp_hash=hash_otp(email, otp),
+        expires_at=datetime.utcnow() + timedelta(minutes=OTP_VALID_MINUTES),
+    ))
     await db.commit()
-    await db.refresh(token)
-
     return otp
+
 
 async def delete_otps(email: str, db: AsyncSession):
     await db.execute(delete(SignupOtpToken).where(SignupOtpToken.email == email))
     await db.commit()
 
+
 async def verify_otp(email: str, otp: str, db: AsyncSession) -> bool:
-    result = await db.execute(
-        select(SignupOtpToken).where(
-            SignupOtpToken.email == email,
-            SignupOtpToken.otp == otp,
-            SignupOtpToken.expires_at > datetime.utcnow()
-        )
-    )
-    token = result.scalar_one_or_none()
-    return token is not None
+    token = (await db.execute(
+        select(SignupOtpToken)
+        .where(SignupOtpToken.email == email, SignupOtpToken.expires_at > datetime.utcnow())
+        .order_by(desc(SignupOtpToken.id)).limit(1)
+    )).scalar_one_or_none()
+    if token is None or token.attempts >= MAX_OTP_ATTEMPTS:
+        return False
+    if otp_matches(email, otp, token.otp_hash):
+        return True
+    token.attempts += 1  # a wrong guess uses up one of the 5 attempts
+    await db.commit()
+    return False
